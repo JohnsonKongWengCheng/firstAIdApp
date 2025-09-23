@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "649704440854",
+    "firebase_url": "https://firstaid-ddf40-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "firstaid-ddf40",
+    "storage_bucket": "firstaid-ddf40.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:649704440854:android:34b3ea64976b60a1132137",
+        "android_client_info": {
+          "package_name": "com.example.fyp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmeNm59Tn1AWI0dodImBYVAqbdiJ5T1XU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

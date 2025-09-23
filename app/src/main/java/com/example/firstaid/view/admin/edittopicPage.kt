@@ -1,0 +1,259 @@
+package com.example.firstaid.view.admin
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.firstaid.R
+import com.example.firstaid.view.components.TopBar
+import com.example.firstaid.view.components.TopBarWithBack
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.imePadding
+
+private data class TopicItem(val id: String, val title: String)
+
+@Composable
+fun EditTopicPage(
+    onBackClick: () -> Unit = {}
+) {
+    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
+    val db = remember { FirebaseFirestore.getInstance() }
+    var topics by remember { mutableStateOf<List<TopicItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var selectedTopic by remember { mutableStateOf<TopicItem?>(null) }
+    var expanded by remember { mutableStateOf(false) }
+    var newTitle by remember { mutableStateOf(TextFieldValue("")) }
+    var isSaving by remember { mutableStateOf(false) }
+    var showSuccess by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        db.collection("First_Aid").get()
+            .addOnSuccessListener { qs ->
+                topics = qs.documents.map { d ->
+                    TopicItem(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
+                }.sortedBy { it.title }
+                isLoading = false
+            }
+            .addOnFailureListener {
+                isLoading = false
+            }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            TopBarWithBack(title = "Edit Topic", onBackClick = onBackClick)
+
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = colorResource(id = R.color.green_primary))
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 100.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Dropdown label
+                    Text(
+                        text = "First Aid Topic Title",
+                        fontSize = 16.sp,
+                        color = Color.Black,
+                        fontFamily = cabin
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Custom dropdown styled as a rounded field with placeholder and chevron
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
+                            .clickable { expanded = true },
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = selectedTopic?.title ?: "Choose the First Aid Topic Title",
+                                color = if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Icon(
+                                imageVector = Icons.Filled.ArrowDropDown,
+                                contentDescription = null,
+                                tint = Color.Black
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                        ) {
+                            topics.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item.title) },
+                                    onClick = {
+                                        selectedTopic = item
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Text(
+                        text = "New First Aid Topic Title",
+                        fontSize = 16.sp,
+                        color = Color.Black,
+                        fontFamily = cabin
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = newTitle,
+                        onValueChange = { newTitle = it },
+                        placeholder = { Text("Enter First Aid Topic Title here..", color = Color(0xFFAAAAAA)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedContainerColor = Color(0xFFECF0EC),
+                            focusedContainerColor = Color(0xFFE6F3E6)
+                        )
+                    )
+                }
+            }
+        }
+
+        // Bottom divider and Confirm button
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .imePadding()
+                .padding(bottom = 16.dp)
+        ) {
+            Divider(color = Color(0xFFB8B8B8), thickness = 1.dp, modifier = Modifier.padding(horizontal = 11.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    val sel = selectedTopic
+                    if (!isSaving && sel != null && newTitle.text.isNotBlank()) {
+                        isSaving = true
+                        db.collection("First_Aid")
+                            .whereEqualTo("firstAidId", sel.id)
+                            .limit(1)
+                            .get()
+                            .addOnSuccessListener { qs ->
+                                val doc = qs.documents.firstOrNull()
+                                if (doc != null) {
+                                    doc.reference.update("title", newTitle.text.trim())
+                                        .addOnSuccessListener {
+                                            showSuccess = true
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(1000)
+                                                showSuccess = false
+                                                onBackClick()
+                                            }
+                                        }
+                                        .addOnFailureListener {
+                                            isSaving = false
+                                        }
+                                } else {
+                                    isSaving = false
+                                }
+                            }
+                            .addOnFailureListener {
+                                isSaving = false
+                            }
+                    }
+                },
+                enabled = !isSaving && selectedTopic != null && newTitle.text.isNotBlank(),
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .fillMaxWidth()
+                    .height(46.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colorResource(id = R.color.green_primary),
+                    disabledContainerColor = Color.Gray.copy(alpha = 0.2f),
+                    disabledContentColor = Color.Gray
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(text = if (isSaving) "Saving..." else "Confirm", color = Color.White, fontFamily = cabin)
+            }
+        }
+
+        // Success overlay
+        if (showSuccess) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(32.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Success",
+                            tint = colorResource(id = R.color.green_primary),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Topic Updated Successfully!",
+                            color = colorResource(id = R.color.green_primary),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = cabin
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
