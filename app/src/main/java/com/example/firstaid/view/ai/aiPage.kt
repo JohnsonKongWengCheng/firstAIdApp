@@ -42,6 +42,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import com.example.firstaid.service.ApiService
+import android.util.Log
+import org.json.JSONObject
+import org.json.JSONArray
 
 @Composable
 fun AiPage(
@@ -56,6 +60,14 @@ fun AiPage(
     var possibleInjuries by remember { mutableStateOf("") }
     var isRecording by remember { mutableStateOf(false) }
     var isListening by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    
+    // Warm up the API service when the page loads
+    LaunchedEffect(Unit) {
+        val apiService = ApiService(context)
+        apiService.warmUpService()
+    }
 
     // Speech Recognition Launcher
     val speechLauncher = rememberLauncherForActivityResult(
@@ -250,19 +262,75 @@ fun AiPage(
                         .fillMaxWidth()
                         .height(46.dp)
                         .shadow(4.dp, RoundedCornerShape(10.dp)),
-                    colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.green_primary)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isLoading || scenarioText.isEmpty()) 
+                            Color.Gray else colorResource(id = R.color.green_primary)
+                    ),
                     shape = RoundedCornerShape(10.dp),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable { 
-                                // TODO: Implement submit functionality
+                                if (scenarioText.isNotEmpty() && !isLoading) {
+                                    isLoading = true
+                                    errorMessage = ""
+                                    possibleInjuries = ""
+                                    
+                                    val apiService = ApiService(context)
+                                    apiService.extractKeywords(scenarioText, object : ApiService.ApiCallback {
+                                        override fun onSuccess(response: String) {
+                                            try {
+                                                val json = JSONObject(response)
+                                                val keywordsJson = json.optJSONArray("keywords") ?: JSONArray()
+                                                val keywords = MutableList(keywordsJson.length()) { idx ->
+                                                    keywordsJson.optString(idx)
+                                                }.filter { it.isNotBlank() }
+
+                                                if (keywords.isEmpty()) {
+                                                    isLoading = false
+                                                    possibleInjuries = "No keywords detected."
+                                                    return
+                                                }
+
+											apiService.predictInjury(keywords, object : ApiService.ApiCallback {
+												override fun onSuccess(response: String) {
+													isLoading = false
+													try {
+														val mlJson = JSONObject(response)
+														val predictedAny = mlJson.opt("predicted_injury")
+														val predictedCode = predictedAny?.toString()?.toIntOrNull()
+														possibleInjuries = if (predictedCode != null) mapPredictedInjury(predictedCode) else (predictedAny?.toString() ?: response)
+													} catch (e: Exception) {
+														possibleInjuries = response
+													}
+													Log.d("AiPage", "ML Success: $response")
+												}
+
+                                                    override fun onError(error: String) {
+                                                        isLoading = false
+                                                        errorMessage = error
+                                                        Log.e("AiPage", "ML Error: $error")
+                                                    }
+                                                })
+                                            } catch (e: Exception) {
+                                                isLoading = false
+                                                errorMessage = "Failed to parse keywords."
+                                            }
+                                        }
+                                        
+                                        override fun onError(error: String) {
+                                            isLoading = false
+                                            errorMessage = error
+                                            Log.e("AiPage", "API Error: $error")
+                                        }
+                                    })
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Submit",
+                            text = if (isLoading) "Analyzing..." else "Submit",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontFamily = cabin,
@@ -299,23 +367,57 @@ fun AiPage(
                             .padding(15.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        if (possibleInjuries.isEmpty()) {
-                            Text(
-                                text = "AI analysis will appear here...",
-                                color = Color(0xFF848484),
-                                fontSize = 15.sp,
-                                fontFamily = cabin,
-                                style = androidx.compose.ui.text.TextStyle(
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        when {
+                            isLoading -> {
+                                Text(
+                                    text = "Analyzing scenario...",
+                                    color = Color(0xFF4CAF50),
+                                    fontSize = 15.sp,
+                                    fontFamily = cabin,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
                                 )
-                            )
-                        } else {
-                            Text(
-                                text = possibleInjuries,
-                                color = Color.Black,
-                                fontSize = 15.sp,
-                                fontFamily = cabin
-                            )
+                            }
+                            errorMessage.isNotEmpty() -> {
+                                Column {
+                                    Text(
+                                        text = "Error: $errorMessage",
+                                        color = Color.Red,
+                                        fontSize = 15.sp,
+                                        fontFamily = cabin
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Tap Submit to try again",
+                                        color = Color(0xFF666666),
+                                        fontSize = 12.sp,
+                                        fontFamily = cabin,
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                        )
+                                    )
+                                }
+                            }
+                            possibleInjuries.isNotEmpty() -> {
+                                Text(
+                                    text = possibleInjuries,
+                                    color = Color.Black,
+                                    fontSize = 15.sp,
+                                    fontFamily = cabin
+                                )
+                            }
+                            else -> {
+                                Text(
+                                    text = "AI analysis will appear here...",
+                                    color = Color(0xFF848484),
+                                    fontSize = 15.sp,
+                                    fontFamily = cabin,
+                                    style = androidx.compose.ui.text.TextStyle(
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -384,6 +486,42 @@ fun startSpeechRecognition(
         launcher.launch(intent)
     } catch (e: Exception) {
         // Handle error silently
+    }
+}
+
+private fun mapPredictedInjury(code: Int): String {
+    return when (code) {
+        41 -> "Ingestion"
+        42 -> "Aspiration"
+        46 -> "Burns, Electrical"
+        47 -> "Burns, Not Specified"
+        48 -> "Burns, Scald"
+        49 -> "Burns, Chemical"
+        50 -> "Amputaion"
+        51 -> "Burns, Thermal"
+        52 -> "Concussions"
+        53 -> "Contusions, Abrasions"
+        54 -> "Crushing"
+        55 -> "Dislocation"
+        56 -> "Foreign Body"
+        57 -> "Fracture"
+        58 -> "Hematoma"
+        59 -> "Laceration"
+        60 -> "Dental Injury"
+        61 -> "Nerve Damage"
+        62 -> "Internal Organ Injury"
+        63 -> "Puncture"
+        64 -> "Strain, Sprain"
+        65 -> "Anoxia"
+        66 -> "Hemorrhage"
+        67 -> "Electric Shock"
+        68 -> "Poisoning"
+        69 -> "Submersion"
+        71 -> "Other/Not Stated"
+        72 -> "Avulsion"
+        73 -> "Burns, Radiation"
+        74 -> "Dermatitis, Conjunctivitis"
+        else -> "Unknown injury ($code)"
     }
 }
 

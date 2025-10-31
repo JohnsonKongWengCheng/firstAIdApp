@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.delay
 import com.example.firstaid.ui.theme.FirstAIdTheme
 import com.example.firstaid.view.firstAid.FirstAidDetailsPage
 import com.example.firstaid.view.firstAid.FirstAidListPage
@@ -89,7 +91,22 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                    NavHost(navController = navController, startDestination = "firstaidlist") {
+                    NavHost(navController = navController, startDestination = "splash") {
+                        composable("splash") {
+                            // Simple Compose splash that shows logo then navigates
+                            LaunchedEffect(Unit) {
+                                delay(1000)
+                                navController.navigate("firstaidlist") {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                androidx.compose.foundation.Image(
+                                    painter = painterResource(id = R.drawable.logo),
+                                    contentDescription = null
+                                )
+                            }
+                        }
                         composable(
                             "login_signup",
                             arguments = listOf(navArgument("redirect") {

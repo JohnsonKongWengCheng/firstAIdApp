@@ -36,7 +36,60 @@ fun AddTopicPage(
     var titleState by remember { mutableStateOf(TextFieldValue("")) }
     var isSaving by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
+    var titleExists by remember { mutableStateOf(false) }
+    var isValidating by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf("") }
+    var isFormatInvalid by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+
+    // Validate title (letters and spaces only) and existence in Firebase (case-insensitive)
+    LaunchedEffect(titleState.text) {
+        val title = titleState.text.trim()
+        if (title.isNotEmpty()) {
+            isValidating = true
+            validationError = ""
+            titleExists = false
+            isFormatInvalid = false
+            
+            // Format validation: allow only letters and spaces
+            val isOnlyLettersAndSpaces = title.all { it.isLetter() || it.isWhitespace() }
+            if (!isOnlyLettersAndSpaces) {
+                isFormatInvalid = true
+                validationError = "Only letters and spaces are allowed"
+                isValidating = false
+                return@LaunchedEffect
+            }
+
+            // Get all documents and check case-insensitively
+            db.collection("First_Aid")
+                .get()
+                .addOnSuccessListener { documents ->
+                    val existingTitles = documents.documents.mapNotNull { doc ->
+                        doc.getString("title")?.trim()
+                    }
+
+                    // Check if any existing title matches (case-insensitive)
+                    titleExists = existingTitles.any { existingTitle ->
+                        existingTitle.equals(title, ignoreCase = true)
+                    }
+
+                    if (titleExists) {
+                        validationError = "This topic title already exists"
+                    }
+                    isValidating = false
+                }
+                .addOnFailureListener { exception ->
+                    validationError = "Error checking title availability"
+                    isValidating = false
+                }
+        } else {
+            titleExists = false
+            validationError = ""
+            isValidating = false
+            isFormatInvalid = false
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -68,12 +121,35 @@ fun AddTopicPage(
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                        unfocusedBorderColor = if (titleExists || isFormatInvalid) Color.Red else Color.Transparent,
+                        focusedBorderColor = if (titleExists || isFormatInvalid) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
                         unfocusedContainerColor = Color(0xFFECF0EC),
                         focusedContainerColor = Color(0xFFE6F3E6)
-                    )
+                    ),
+                    isError = titleExists || isFormatInvalid
                 )
+                
+                // Error message display
+                if (validationError.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = validationError,
+                        color = Color.Red,
+                        fontSize = 12.sp,
+                        fontFamily = cabin
+                    )
+                }
+                
+                // Validation loading indicator
+                if (isValidating && titleState.text.trim().isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Checking availability...",
+                        color = Color(0xFF666666),
+                        fontSize = 12.sp,
+                        fontFamily = cabin
+                    )
+                }
             }
         }
 
@@ -89,7 +165,7 @@ fun AddTopicPage(
             Spacer(modifier = Modifier.height(12.dp))
             Button(
                 onClick = {
-                    if (!isSaving && titleState.text.isNotBlank()) {
+                    if (!isSaving && titleState.text.isNotBlank() && !titleExists && !isValidating) {
                         isSaving = true
                         // Create document with generated id; store both firstAidId and title
                         val docRef = db.collection("First_Aid").document()
@@ -111,7 +187,7 @@ fun AddTopicPage(
                             }
                     }
                 },
-                enabled = !isSaving && titleState.text.isNotBlank(),
+                enabled = !isSaving && titleState.text.isNotBlank() && !titleExists && !isValidating && !isFormatInvalid,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.firstaid.R
@@ -41,61 +42,78 @@ fun AddExamPage(
     var selectedTopic by remember { mutableStateOf<ExamTopicRef?>(null) }
     var expanded by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
+    var noTopicsAvailable by remember { mutableStateOf(false) }
 
     var description by remember { mutableStateOf(TextFieldValue("")) }
-    var question by remember { mutableStateOf(TextFieldValue("")) }
-    var correctAnswer by remember { mutableStateOf(TextFieldValue("")) }
-    var option1 by remember { mutableStateOf(TextFieldValue("")) }
-    var option2 by remember { mutableStateOf(TextFieldValue("")) }
-    var option3 by remember { mutableStateOf(TextFieldValue("")) }
 
-    // Second question fields (appear after Q1 completed)
-    val isQ1Complete by remember {
-        derivedStateOf {
-            question.text.isNotBlank() &&
-            correctAnswer.text.isNotBlank() &&
-            (option1.text.isNotBlank() || option2.text.isNotBlank() || option3.text.isNotBlank())
-        }
-    }
-    var question2 by remember { mutableStateOf(TextFieldValue("")) }
-    var correctAnswer2 by remember { mutableStateOf(TextFieldValue("")) }
-    var option1_2 by remember { mutableStateOf(TextFieldValue("")) }
-    var option2_2 by remember { mutableStateOf(TextFieldValue("")) }
-    var option3_2 by remember { mutableStateOf(TextFieldValue("")) }
+    // Dynamic questions management
+    data class QuestionData(
+        val id: Int,
+        var question: TextFieldValue,
+        var correctAnswer: TextFieldValue,
+        var option1: TextFieldValue,
+        var option2: TextFieldValue,
+        var option3: TextFieldValue
+    )
+    
+    var questions by remember { mutableStateOf(listOf(QuestionData(1, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), TextFieldValue("")))) }
+    var nextQuestionId by remember { mutableStateOf(2) }
 
     var isSaving by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
 
-    // Enable Confirm only when topic chosen, description, question, correct answer filled,
-    // and at least one other option is provided
-    val hasAtLeastOneOtherOption by remember {
-        derivedStateOf { option1.text.isNotBlank() || option2.text.isNotBlank() || option3.text.isNotBlank() }
-    }
-    val hasAtLeastOneOtherOptionQ2 by remember {
-        derivedStateOf { option1_2.text.isNotBlank() || option2_2.text.isNotBlank() || option3_2.text.isNotBlank() }
-    }
-    val isQ2Valid by remember {
-        derivedStateOf { question2.text.isNotBlank() && correctAnswer2.text.isNotBlank() && hasAtLeastOneOtherOptionQ2 }
-    }
+    // Enable Confirm only when topic chosen, description filled, and all questions have required fields
     val canConfirm by remember {
         derivedStateOf {
             selectedTopic != null &&
             description.text.isNotBlank() &&
-            question.text.isNotBlank() &&
-            correctAnswer.text.isNotBlank() &&
-            hasAtLeastOneOtherOption
+            questions.all { question ->
+                question.question.text.isNotBlank() &&
+                question.correctAnswer.text.isNotBlank() &&
+                (question.option1.text.isNotBlank() || question.option2.text.isNotBlank() || question.option3.text.isNotBlank())
+            }
         }
     }
 
     LaunchedEffect(Unit) {
+        // First get all first aid topics
         db.collection("First_Aid").get()
-            .addOnSuccessListener { qs ->
-                topics = qs.documents.map { d ->
-                    ExamTopicRef(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
-                }.sortedBy { it.title }
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all exams to see which topics already have exams
+                db.collection("Exam")
+                    .get()
+                    .addOnSuccessListener { examResult ->
+                        val topicsWithExams = examResult.documents.mapNotNull { examDoc ->
+                            examDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Filter out topics that already have exams
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            if (!topicsWithExams.contains(firstAidId)) {
+                                ExamTopicRef(id = firstAidId, title = doc.getString("title") ?: doc.id)
+                            } else null
+                        }.sortedBy { it.title }
+                        
+                        // Check if no topics are available
+                        noTopicsAvailable = topics.isEmpty()
+                        isLoading = false
+                    }
+                    .addOnFailureListener { exception ->
+                        // If exam collection fails, show all topics
+                        topics = firstAidResult.documents.map { d ->
+                            ExamTopicRef(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
+                        }.sortedBy { it.title }
+                        noTopicsAvailable = false
+                        isLoading = false
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // Handle error if needed
+                topics = emptyList()
+                noTopicsAvailable = true
                 isLoading = false
             }
-            .addOnFailureListener { isLoading = false }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -126,8 +144,8 @@ fun AddExamPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
-                            .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
-                            .clickable { expanded = true },
+                            .background(if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC), RoundedCornerShape(10.dp))
+                            .clickable { if (!noTopicsAvailable) expanded = true },
                         contentAlignment = Alignment.CenterStart
                     ) {
                         Row(
@@ -136,13 +154,13 @@ fun AddExamPage(
                         ) {
                             Text(
                                 text = selectedTopic?.title ?: "Choose the First Aid Topic Title",
-                                color = if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
+                                color = if (noTopicsAvailable) Color.Gray else if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
                                 fontSize = 16.sp
                             )
                             Spacer(modifier = Modifier.weight(1f))
-                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null, tint = Color.Black)
+                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null, tint = if (noTopicsAvailable) Color.Gray else Color.Black)
                         }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenu(expanded = expanded && !noTopicsAvailable, onDismissRequest = { expanded = false }) {
                             topics.forEach { item ->
                                 DropdownMenuItem(text = { Text(item.title) }, onClick = {
                                     selectedTopic = item
@@ -152,14 +170,45 @@ fun AddExamPage(
                         }
                     }
 
+                    // Show message if no topics are available
+                    if (noTopicsAvailable) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "No Topics Available",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF856404),
+                                    fontFamily = cabin
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "All first aid topics already have exams. You cannot add new exams at this time.",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF856404),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Description
-                    Text(text = "Description:", fontSize = 16.sp, color = Color.Black)
+                    Text(text = "Description:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = description,
-                        onValueChange = { description = it },
+                        onValueChange = { if (!noTopicsAvailable) description = it },
+                        enabled = !noTopicsAvailable,
                         placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -167,118 +216,73 @@ fun AddExamPage(
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedBorderColor = Color.Transparent,
                             focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
+                            unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                            focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledTextColor = Color.Gray
                         )
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // First Question
-                    Text(text = "First Question", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = "Question:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = question,
-                        onValueChange = { question = it },
-                        placeholder = { Text("Enter question here..", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Correct Answer:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = correctAnswer,
-                        onValueChange = { correctAnswer = it },
-                        placeholder = { Text("Enter correct answer..", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Other option 1:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = option1,
-                        onValueChange = { option1 = it },
-                        placeholder = { Text("Enter option 1", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Other option 2:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = option2,
-                        onValueChange = { option2 = it },
-                        placeholder = { Text("Enter option 2", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Other option 3:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = option3,
-                        onValueChange = { option3 = it },
-                        placeholder = { Text("Enter option 3", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    // Second question appears when first is complete
-                    if (isQ1Complete) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Text(text = "Second Question", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
+                    // Dynamic questions rendering
+                    questions.forEachIndexed { index, question ->
+                        if (index > 0) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Question ${index + 1}",
+                                fontSize = 16.sp,
+                                color = Color.Black,
+                                fontFamily = cabin
+                            )
+                            
+                            // Remove Question button (show if there are 2 or more questions)
+                            if (questions.size > 1) {
+                                Button(
+                                    onClick = {
+                                        if (!noTopicsAvailable) {
+                                            questions = questions.filter { it.id != question.id }
+                                        }
+                                    },
+                                    enabled = !noTopicsAvailable,
+                                    modifier = Modifier.height(32.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color.Red.copy(alpha = 0.8f)
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Remove",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontFamily = cabin
+                                    )
+                                }
+                            }
+                        }
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(text = "Question:", fontSize = 16.sp, color = Color.Black)
+                        
+                        Text(text = "Question:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = question2,
-                            onValueChange = { question2 = it },
+                            value = question.question,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    questions = questions.map { 
+                                        if (it.id == question.id) it.copy(question = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
                             placeholder = { Text("Enter question here..", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -286,17 +290,26 @@ fun AddExamPage(
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Correct Answer:", fontSize = 16.sp, color = Color.Black)
+                        Text(text = "Correct Answer:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = correctAnswer2,
-                            onValueChange = { correctAnswer2 = it },
+                            value = question.correctAnswer,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    questions = questions.map { 
+                                        if (it.id == question.id) it.copy(correctAnswer = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
                             placeholder = { Text("Enter correct answer..", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -304,17 +317,26 @@ fun AddExamPage(
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Other option 1:", fontSize = 16.sp, color = Color.Black)
+                        Text(text = "Other option 1:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = option1_2,
-                            onValueChange = { option1_2 = it },
+                            value = question.option1,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    questions = questions.map { 
+                                        if (it.id == question.id) it.copy(option1 = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
                             placeholder = { Text("Enter option 1", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -322,17 +344,26 @@ fun AddExamPage(
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Other option 2:", fontSize = 16.sp, color = Color.Black)
+                        Text(text = "Other option 2:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = option2_2,
-                            onValueChange = { option2_2 = it },
+                            value = question.option2,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    questions = questions.map { 
+                                        if (it.id == question.id) it.copy(option2 = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
                             placeholder = { Text("Enter option 2", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -340,17 +371,26 @@ fun AddExamPage(
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Other option 3:", fontSize = 16.sp, color = Color.Black)
+                        Text(text = "Other option 3:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = option3_2,
-                            onValueChange = { option3_2 = it },
+                            value = question.option3,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    questions = questions.map { 
+                                        if (it.id == question.id) it.copy(option3 = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
                             placeholder = { Text("Enter option 3", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -358,10 +398,42 @@ fun AddExamPage(
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
+                    }
+
+                    // Add Question button
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            if (!noTopicsAvailable) {
+                                questions = questions + QuestionData(
+                                    id = nextQuestionId,
+                                    question = TextFieldValue(""),
+                                    correctAnswer = TextFieldValue(""),
+                                    option1 = TextFieldValue(""),
+                                    option2 = TextFieldValue(""),
+                                    option3 = TextFieldValue("")
+                                )
+                                nextQuestionId++
+                            }
+                        },
+                        enabled = !noTopicsAvailable,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledContentColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(text = "Add Question", color = colorResource(id = R.color.green_primary))
                     }
 
                     Spacer(modifier = Modifier.height(120.dp))
@@ -394,7 +466,7 @@ fun AddExamPage(
                         )
                         examRef.set(exam)
                             .addOnSuccessListener {
-                                // Create questions (1 and 2 if provided)
+                                // Create questions from dynamic questions list
                                 val batch = db.batch()
                                 fun enqueueQuestion(qText: String, corr: String, o1: String?, o2: String?, o3: String?) {
                                     val ref = db.collection("Question").document()
@@ -408,10 +480,18 @@ fun AddExamPage(
                                     )
                                     batch.set(ref, data)
                                 }
-                                enqueueQuestion(question.text, correctAnswer.text, option1.text, option2.text, option3.text)
-                                if (isQ1Complete && question2.text.isNotBlank() && correctAnswer2.text.isNotBlank()) {
-                                    enqueueQuestion(question2.text, correctAnswer2.text, option1_2.text, option2_2.text, option3_2.text)
+                                
+                                // Add all questions from the dynamic list
+                                questions.forEach { question ->
+                                    enqueueQuestion(
+                                        question.question.text,
+                                        question.correctAnswer.text,
+                                        question.option1.text,
+                                        question.option2.text,
+                                        question.option3.text
+                                    )
                                 }
+                                
                                 batch.commit()
                                     .addOnSuccessListener {
                                         showSuccess = true
@@ -426,7 +506,7 @@ fun AddExamPage(
                             .addOnFailureListener { isSaving = false }
                     }
                 },
-                enabled = !isSaving && canConfirm,
+                enabled = !isSaving && canConfirm && !noTopicsAvailable,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

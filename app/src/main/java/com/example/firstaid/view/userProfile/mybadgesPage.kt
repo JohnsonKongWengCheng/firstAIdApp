@@ -229,7 +229,7 @@ private fun BadgeCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(132.dp)
+            .wrapContentHeight()
             .shadow(4.dp, RoundedCornerShape(10.dp)),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(10.dp),
@@ -240,9 +240,9 @@ private fun BadgeCard(
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(19.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             // Badge Icon
             Box(
@@ -276,15 +276,13 @@ private fun BadgeCard(
                     fontFamily = fontFamily
                 )
                 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 
                 Text(
                     text = badge.description,
                     fontSize = 17.sp,
                     color = Color.Black,
                     fontFamily = fontFamily,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
                     lineHeight = 20.sp
                 )
                 

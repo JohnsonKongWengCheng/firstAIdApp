@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.firstaid.R
@@ -51,23 +52,56 @@ fun EditModulePage(
     var selectedTopic by remember { mutableStateOf<TopicRef?>(null) }
     var selectedModule by remember { mutableStateOf<ModuleRef?>(null) }
     var topicExpanded by remember { mutableStateOf(false) }
+    var noTopicsAvailable by remember { mutableStateOf(false) }
 
     // Steps
     var steps by remember { mutableStateOf<List<EditableStep>>(emptyList()) }
+    var originalSteps by remember { mutableStateOf<List<EditableStep>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isSaving by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
 
-    // Load topics
+    // Load topics that have modules
     LaunchedEffect(Unit) {
+        // First get all first aid topics
         db.collection("First_Aid").get()
-            .addOnSuccessListener { qs ->
-                topics = qs.documents.map { d ->
-                    TopicRef(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
-                }.sortedBy { it.title }
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all modules to see which topics have modules
+                db.collection("Learning")
+                    .get()
+                    .addOnSuccessListener { moduleResult ->
+                        val topicsWithModules = moduleResult.documents.mapNotNull { moduleDoc ->
+                            moduleDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Filter to only show topics that have modules
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            val title = doc.getString("title") ?: return@mapNotNull null
+                            if (topicsWithModules.contains(firstAidId)) {
+                                TopicRef(id = firstAidId, title = title)
+                            } else null
+                        }.sortedBy { it.title }
+                        
+                        // Check if no topics are available
+                        noTopicsAvailable = topics.isEmpty()
+                        isLoading = false
+                    }
+                    .addOnFailureListener { exception ->
+                        // If module collection fails, show all topics
+                        topics = firstAidResult.documents.map { d ->
+                            TopicRef(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
+                        }.sortedBy { it.title }
+                        noTopicsAvailable = false
+                        isLoading = false
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // Handle error if needed
+                topics = emptyList()
+                noTopicsAvailable = true
                 isLoading = false
             }
-            .addOnFailureListener { isLoading = false }
     }
 
     // Load modules when topic selected
@@ -89,6 +123,7 @@ fun EditModulePage(
     // Load steps when module selected
     LaunchedEffect(selectedModule) {
         steps = emptyList()
+        originalSteps = emptyList()
         val mod = selectedModule ?: return@LaunchedEffect
         db.collection("Content").whereEqualTo("learningId", mod.id).get()
             .addOnSuccessListener { qs ->
@@ -102,12 +137,32 @@ fun EditModulePage(
                     )
                 }.sortedBy { it.stepNumber }
                 steps = list.ifEmpty { listOf(EditableStep(null, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), 1)) }
+                originalSteps = list // Store original steps for comparison
             }
     }
 
     fun addEmptyStep() {
         val next = (steps.maxOfOrNull { it.stepNumber } ?: 0) + 1
         steps = steps + EditableStep(null, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), next)
+    }
+
+    fun removeStep(stepToRemove: EditableStep) {
+        steps = steps.filter { it != stepToRemove }
+    }
+
+    // Validation function to check if all steps have valid data
+    fun areAllStepsValid(): Boolean {
+        return steps.isNotEmpty() && steps.all { step ->
+            step.title.text.trim().isNotBlank() &&
+            step.content.text.trim().isNotBlank() &&
+            step.description.text.trim().isNotBlank()
+        }
+    }
+
+    // Function to find steps that were removed (exist in original but not in current)
+    fun getRemovedSteps(): List<EditableStep> {
+        val currentStepIds = steps.mapNotNull { it.id }.toSet()
+        return originalSteps.filter { it.id != null && !currentStepIds.contains(it.id) }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -138,8 +193,8 @@ fun EditModulePage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
-                            .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
-                            .clickable { topicExpanded = true },
+                            .background(if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC), RoundedCornerShape(10.dp))
+                            .clickable { if (!noTopicsAvailable) topicExpanded = true },
                         contentAlignment = Alignment.CenterStart
                     ) {
                         Row(
@@ -148,18 +203,48 @@ fun EditModulePage(
                         ) {
                             Text(
                                 text = selectedTopic?.title ?: "Choose the First Aid Topic Title",
-                                color = if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
+                                color = if (noTopicsAvailable) Color.Gray else if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
                                 fontSize = 16.sp
                             )
                             Spacer(modifier = Modifier.weight(1f))
-                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null, tint = Color.Black)
+                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null, tint = if (noTopicsAvailable) Color.Gray else Color.Black)
                         }
-                        DropdownMenu(expanded = topicExpanded, onDismissRequest = { topicExpanded = false }) {
+                        DropdownMenu(expanded = topicExpanded && !noTopicsAvailable, onDismissRequest = { topicExpanded = false }) {
                             topics.forEach { item ->
                                 DropdownMenuItem(text = { Text(item.title) }, onClick = {
                                     selectedTopic = item
                                     topicExpanded = false
                                 })
+                            }
+                        }
+                    }
+
+                    // Show message if no topics are available
+                    if (noTopicsAvailable) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "No Topics Available",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF856404),
+                                    fontFamily = cabin
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No first aid topics have modules yet. You cannot edit modules at this time.",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF856404),
+                                    textAlign = TextAlign.Center
+                                )
                             }
                         }
                     }
@@ -196,7 +281,32 @@ fun EditModulePage(
                     if (selectedModule != null) {
                         Spacer(modifier = Modifier.height(24.dp))
                         steps.forEachIndexed { index, step ->
-                            Text(text = "Step ${index + 1}", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "Step ${index + 1}", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
+                                
+                                // Remove Step button (show if there are 2 or more steps)
+                                if (steps.size > 1) {
+                                    Button(
+                                        onClick = { removeStep(step) },
+                                        modifier = Modifier.height(32.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color.Red.copy(alpha = 0.8f)
+                                        ),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Remove",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontFamily = cabin
+                                        )
+                                    }
+                                }
+                            }
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(text = "Title:", fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.height(8.dp))
@@ -289,8 +399,17 @@ fun EditModulePage(
                     val module = selectedModule
                     if (!isSaving && module != null) {
                         isSaving = true
-                        // Save steps to Content (update existing by id, add new for null id)
                         val batch = db.batch()
+                        
+                        // Delete removed steps
+                        val removedSteps = getRemovedSteps()
+                        removedSteps.forEach { removedStep ->
+                            if (removedStep.id != null) {
+                                batch.delete(db.collection("Content").document(removedStep.id))
+                            }
+                        }
+                        
+                        // Save/update current steps
                         steps.forEachIndexed { idx, s ->
                             val docRef = if (s.id != null) db.collection("Content").document(s.id) else db.collection("Content").document()
                             val data = hashMapOf(
@@ -302,6 +421,7 @@ fun EditModulePage(
                             )
                             batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
                         }
+                        
                         batch.commit()
                             .addOnSuccessListener {
                                 showSuccess = true
@@ -314,7 +434,7 @@ fun EditModulePage(
                             .addOnFailureListener { isSaving = false }
                     }
                 },
-                enabled = !isSaving && selectedModule != null,
+                enabled = !isSaving && selectedModule != null && !noTopicsAvailable && areAllStepsValid(),
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

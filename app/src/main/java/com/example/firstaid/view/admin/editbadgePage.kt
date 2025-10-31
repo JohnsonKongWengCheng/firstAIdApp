@@ -8,16 +8,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import com.example.firstaid.R
 import com.example.firstaid.view.components.TopBarWithBack
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
@@ -41,6 +45,7 @@ fun EditBadgePage(
 ) {
     val firestore = FirebaseFirestore.getInstance()
     val scope = rememberCoroutineScope()
+    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     
     // State variables
     var topics by remember { mutableStateOf<List<EditBadgeTopicItem>>(emptyList()) }
@@ -52,22 +57,53 @@ fun EditBadgePage(
     var description by remember { mutableStateOf("") }
     var showSuccessDialog by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
+    var noTopicsAvailable by remember { mutableStateOf(false) }
     
     // Original values to track changes
     var originalBadgeName by remember { mutableStateOf("") }
     var originalDescription by remember { mutableStateOf("") }
     
-    // Load topics from Firebase
+    // Load topics that have badges from Firebase
     LaunchedEffect(Unit) {
+        // First get all first aid topics
         firestore.collection("First_Aid")
             .get()
-            .addOnSuccessListener { result ->
-                topics = result.documents.mapNotNull { doc ->
-                    EditBadgeTopicItem(
-                        firstAidId = doc.getString("firstAidId") ?: doc.id,
-                        title = doc.getString("title") ?: doc.id
-                    )
-                }
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all badges to see which topics have badges
+                firestore.collection("Badge")
+                    .get()
+                    .addOnSuccessListener { badgeResult ->
+                        val topicsWithBadges = badgeResult.documents.mapNotNull { badgeDoc ->
+                            badgeDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Filter to only show topics that have badges
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            val title = doc.getString("title") ?: return@mapNotNull null
+                            if (topicsWithBadges.contains(firstAidId)) {
+                                EditBadgeTopicItem(firstAidId = firstAidId, title = title)
+                            } else null
+                        }
+                        
+                        // Check if no topics are available
+                        noTopicsAvailable = topics.isEmpty()
+                    }
+                    .addOnFailureListener { exception ->
+                        // If badge collection fails, show all topics
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            EditBadgeTopicItem(
+                                firstAidId = doc.getString("firstAidId") ?: doc.id,
+                                title = doc.getString("title") ?: doc.id
+                            )
+                        }
+                        noTopicsAvailable = false
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // Handle error if needed
+                topics = emptyList()
+                noTopicsAvailable = true
             }
     }
     
@@ -157,8 +193,8 @@ fun EditBadgePage(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showTopicDropdown = true },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFECECEC)),
+                            .clickable { if (!noTopicsAvailable) showTopicDropdown = true },
+                        colors = CardDefaults.cardColors(containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC)),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(
@@ -171,18 +207,18 @@ fun EditBadgePage(
                             Text(
                                 text = selectedTopic?.title ?: "Choose the First Aid Topic Title",
                                 fontSize = 16.sp,
-                                color = if (selectedTopic != null) Color.Black else Color(0xFFAAAAAA)
+                                color = if (noTopicsAvailable) Color.Gray else if (selectedTopic != null) Color.Black else Color(0xFFAAAAAA)
                             )
                             Icon(
                                 imageVector = Icons.Filled.ArrowDropDown,
                                 contentDescription = "Dropdown",
-                                tint = Color.Black
+                                tint = if (noTopicsAvailable) Color.Gray else Color.Black
                             )
                         }
                     }
 
                     DropdownMenu(
-                        expanded = showTopicDropdown,
+                        expanded = showTopicDropdown && !noTopicsAvailable,
                         onDismissRequest = { showTopicDropdown = false }
                     ) {
                         topics.forEach { topic ->
@@ -192,6 +228,36 @@ fun EditBadgePage(
                                     selectedTopic = topic
                                     showTopicDropdown = false
                                 }
+                            )
+                        }
+                    }
+                }
+
+                // Show message if no topics are available
+                if (noTopicsAvailable) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "No Topics Available",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF856404),
+                                fontFamily = cabin
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "No first aid topics have badges yet. You cannot edit badges at this time.",
+                                fontSize = 14.sp,
+                                color = Color(0xFF856404),
+                                textAlign = TextAlign.Center
                             )
                         }
                     }
@@ -212,7 +278,7 @@ fun EditBadgePage(
                     value = badgeName,
                     onValueChange = { badgeName = it },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedTopic != null,
+                    enabled = selectedTopic != null && !noTopicsAvailable,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
                         unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
@@ -240,7 +306,7 @@ fun EditBadgePage(
                     value = description,
                     onValueChange = { description = it },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedTopic != null,
+                    enabled = selectedTopic != null && !noTopicsAvailable,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
                         unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
@@ -298,7 +364,7 @@ fun EditBadgePage(
                             }
                     }
                 },
-                enabled = canConfirm && !loading,
+                enabled = canConfirm && !loading && !noTopicsAvailable,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()
@@ -329,30 +395,40 @@ fun EditBadgePage(
             }
         }
 
-        // Success dialog
+        // Success overlay
         if (showSuccessDialog) {
-            Dialog(
-                onDismissRequest = { },
-                properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
             ) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
+                        .padding(24.dp)
+                        .fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(32.dp)
+                            .fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Success",
+                            tint = colorResource(id = R.color.green_primary),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Badge Updated Successfully!",
+                            color = colorResource(id = R.color.green_primary),
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF4DB648)
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = cabin
                         )
                     }
                 }

@@ -69,16 +69,47 @@ fun ExamPage(
             db.collection("Exam")
                 .get()
                 .addOnSuccessListener { documents ->
-                    val exams = documents.mapNotNull { doc ->
+                    val allExams = documents.mapNotNull { doc ->
                         mapOf(
                             "examId" to (doc.getString("examId") ?: doc.id),
                             "description" to (doc.getString("description") ?: ""),
                             "firstAidId" to (doc.getString("firstAidId") ?: "")
                         )
                     }
-                    examTopics = exams
-                    examsLoaded = true
-                    if (titlesLoaded) isLoading = false
+                    
+                    // Filter exams that have questions
+                    if (allExams.isNotEmpty()) {
+                        val examIds = allExams.map { it["examId"] as String }
+                        android.util.Log.d("ExamPage", "Checking questions for ${examIds.size} exams: $examIds")
+                        db.collection("Question")
+                            .whereIn("examId", examIds)
+                            .get()
+                            .addOnSuccessListener { questionDocs ->
+                                val examsWithQuestions = questionDocs.documents.mapNotNull { doc ->
+                                    doc.getString("examId")
+                                }.toSet()
+                                android.util.Log.d("ExamPage", "Found questions for exams: $examsWithQuestions")
+                                
+                                examTopics = allExams.filter { exam ->
+                                    val hasQuestions = examsWithQuestions.contains(exam["examId"])
+                                    android.util.Log.d("ExamPage", "Exam ${exam["examId"]} has questions: $hasQuestions")
+                                    hasQuestions
+                                }
+                                android.util.Log.d("ExamPage", "Filtered to ${examTopics.size} exams with questions")
+                                examsLoaded = true
+                                if (titlesLoaded) isLoading = false
+                            }
+                            .addOnFailureListener { e ->
+                                // If question query fails, show all exams (fallback)
+                                examTopics = allExams
+                                examsLoaded = true
+                                if (titlesLoaded) isLoading = false
+                            }
+                    } else {
+                        examTopics = allExams
+                        examsLoaded = true
+                        if (titlesLoaded) isLoading = false
+                    }
                 }
                 .addOnFailureListener { e ->
                     errorMessage = e.localizedMessage ?: "Failed to load exams"

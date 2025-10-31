@@ -43,7 +43,41 @@ fun EditTopicPage(
     var newTitle by remember { mutableStateOf(TextFieldValue("")) }
     var isSaving by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
+    var isFormatInvalid by remember { mutableStateOf(false) }
+    var isSameTitle by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    // Validate new title format and difference from current title
+    LaunchedEffect(newTitle.text, selectedTopic) {
+        val title = newTitle.text.trim()
+        val currentTopic = selectedTopic
+        if (title.isNotEmpty() && currentTopic != null) {
+            isFormatInvalid = false
+            isSameTitle = false
+            validationError = ""
+
+            // Format validation: allow only letters and spaces
+            val isOnlyLettersAndSpaces = title.all { it.isLetter() || it.isWhitespace() }
+            if (!isOnlyLettersAndSpaces) {
+                isFormatInvalid = true
+                validationError = "Only letters and spaces are allowed"
+                return@LaunchedEffect
+            }
+
+            // Check if new title is exactly the same as current title (case-sensitive)
+            // This allows capitalization changes but prevents exact duplicates
+            val isExactSame = title == currentTopic.title
+            if (isExactSame) {
+                isSameTitle = true
+                validationError = "New title must be different from current title"
+            }
+        } else {
+            isFormatInvalid = false
+            isSameTitle = false
+            validationError = ""
+        }
+    }
 
     LaunchedEffect(Unit) {
         db.collection("First_Aid").get()
@@ -147,12 +181,24 @@ fun EditTopicPage(
                         singleLine = true,
                         shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else Color.Transparent,
+                            focusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
                             unfocusedContainerColor = Color(0xFFECF0EC),
                             focusedContainerColor = Color(0xFFE6F3E6)
-                        )
+                        ),
+                        isError = isFormatInvalid || isSameTitle
                     )
+                    
+                    // Error message display
+                    if (validationError.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = validationError,
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            fontFamily = cabin
+                        )
+                    }
                 }
             }
         }
@@ -200,7 +246,7 @@ fun EditTopicPage(
                             }
                     }
                 },
-                enabled = !isSaving && selectedTopic != null && newTitle.text.isNotBlank(),
+                enabled = !isSaving && selectedTopic != null && newTitle.text.isNotBlank() && !isFormatInvalid && !isSameTitle,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

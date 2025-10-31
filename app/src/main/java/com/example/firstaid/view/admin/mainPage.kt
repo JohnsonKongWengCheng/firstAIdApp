@@ -14,6 +14,8 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.firstaid.R
@@ -41,6 +43,206 @@ fun AdminMainPage(
 
     var isChecking by remember { mutableStateOf(true) }
     var isAdmin by remember { mutableStateOf(false) }
+    var showNoTopicsDialog by remember { mutableStateOf(false) }
+    var showNoExamTopicsDialog by remember { mutableStateOf(false) }
+    var showNoTopicsForEditDialog by remember { mutableStateOf(false) }
+    var showNoModuleTopicsDialog by remember { mutableStateOf(false) }
+    var showNoTopicsForEditModuleDialog by remember { mutableStateOf(false) }
+
+    // Function to check if there are topics without badges
+    fun checkTopicsWithoutBadges() {
+        // First get all first aid topics
+        db.collection("First_Aid")
+            .get()
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all badges to see which topics already have badges
+                db.collection("Badge")
+                    .get()
+                    .addOnSuccessListener { badgeResult ->
+                        val topicsWithBadges = badgeResult.documents.mapNotNull { badgeDoc ->
+                            badgeDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Check if there are topics without badges
+                        val topicsWithoutBadges = firstAidResult.documents.any { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            !topicsWithBadges.contains(firstAidId)
+                        }
+                        
+                        if (topicsWithoutBadges) {
+                            // There are topics without badges, allow navigation
+                            onAddBadge()
+                        } else {
+                            // No topics without badges, show dialog
+                            showNoTopicsDialog = true
+                        }
+                    }
+                    .addOnFailureListener { exception ->
+                        // If badge collection fails, allow navigation (fallback)
+                        onAddBadge()
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // If first aid collection fails, allow navigation (fallback)
+                onAddBadge()
+            }
+    }
+
+    // Function to check if there are topics without exams (for Add Exam)
+    fun checkTopicsWithoutExams() {
+        // First get all first aid topics
+        db.collection("First_Aid")
+            .get()
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all exams to see which topics already have exams
+                db.collection("Exam")
+                    .get()
+                    .addOnSuccessListener { examResult ->
+                        val topicsWithExams = examResult.documents.mapNotNull { examDoc ->
+                            examDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Check if there are topics without exams
+                        val topicsWithoutExams = firstAidResult.documents.any { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            !topicsWithExams.contains(firstAidId)
+                        }
+                        
+                        if (topicsWithoutExams) {
+                            // There are topics without exams, allow navigation
+                            onAddExam()
+                        } else {
+                            // No topics without exams, show dialog
+                            showNoExamTopicsDialog = true
+                        }
+                    }
+                    .addOnFailureListener { exception ->
+                        // If exam collection fails, allow navigation (fallback)
+                        onAddExam()
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // If first aid collection fails, allow navigation (fallback)
+                onAddExam()
+            }
+    }
+
+    // Function to check if there are topics with exams (for Edit Exam)
+    fun checkTopicsWithExams() {
+        // First get all first aid topics
+        db.collection("First_Aid")
+            .get()
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all exams to see which topics have exams
+                db.collection("Exam")
+                    .get()
+                    .addOnSuccessListener { examResult ->
+                        val topicsWithExams = examResult.documents.mapNotNull { examDoc ->
+                            examDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Check if there are topics with exams
+                        val topicsWithExamsExist = firstAidResult.documents.any { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            topicsWithExams.contains(firstAidId)
+                        }
+                        
+                        if (topicsWithExamsExist) {
+                            // There are topics with exams, allow navigation
+                            onEditExam()
+                        } else {
+                            // No topics with exams, show dialog
+                            showNoTopicsForEditDialog = true
+                        }
+                    }
+                    .addOnFailureListener { exception ->
+                        // If exam collection fails, allow navigation (fallback)
+                        onEditExam()
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // If first aid collection fails, allow navigation (fallback)
+                onEditExam()
+            }
+    }
+
+    // Function to check if there are topics without modules (for Add Module)
+    fun checkTopicsWithoutModules() {
+        // First get all first aid topics
+        db.collection("First_Aid")
+            .get()
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all modules to see which topics already have modules
+                db.collection("Learning")
+                    .get()
+                    .addOnSuccessListener { moduleResult ->
+                        val topicsWithModules = moduleResult.documents.mapNotNull { moduleDoc ->
+                            moduleDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Check if there are topics without modules
+                        val topicsWithoutModules = firstAidResult.documents.any { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            !topicsWithModules.contains(firstAidId)
+                        }
+                        
+                        if (topicsWithoutModules) {
+                            // There are topics without modules, allow navigation
+                            onAddModule()
+                        } else {
+                            // No topics without modules, show dialog
+                            showNoModuleTopicsDialog = true
+                        }
+                    }
+                    .addOnFailureListener { exception ->
+                        // If module collection fails, allow navigation (fallback)
+                        onAddModule()
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // If first aid collection fails, allow navigation (fallback)
+                onAddModule()
+            }
+    }
+
+    // Function to check if there are topics with modules (for Edit Module)
+    fun checkTopicsWithModules() {
+        // First get all first aid topics
+        db.collection("First_Aid")
+            .get()
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all modules to see which topics have modules
+                db.collection("Learning")
+                    .get()
+                    .addOnSuccessListener { moduleResult ->
+                        val topicsWithModules = moduleResult.documents.mapNotNull { moduleDoc ->
+                            moduleDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Check if there are topics with modules
+                        val topicsWithModulesExist = firstAidResult.documents.any { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            topicsWithModules.contains(firstAidId)
+                        }
+                        
+                        if (topicsWithModulesExist) {
+                            // There are topics with modules, allow navigation
+                            onEditModule()
+                        } else {
+                            // No topics with modules, show dialog
+                            showNoTopicsForEditModuleDialog = true
+                        }
+                    }
+                    .addOnFailureListener { exception ->
+                        // If module collection fails, allow navigation (fallback)
+                        onEditModule()
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // If first aid collection fails, allow navigation (fallback)
+                onEditModule()
+            }
+    }
 
     LaunchedEffect(docId, userId) {
         // Gate: allow only admin. Primary check: presence in Admin table (userId). Fallback: role/isAdmin on User.
@@ -187,8 +389,8 @@ fun AdminMainPage(
                                 title = "First Aid Module",
                                 primaryText = "Add New Module",
                                 secondaryText = "Edit Current Module",
-                                onPrimaryClick = onAddModule,
-                                onSecondaryClick = onEditModule,
+                                onPrimaryClick = { checkTopicsWithoutModules() },
+                                onSecondaryClick = { checkTopicsWithModules() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -214,8 +416,8 @@ fun AdminMainPage(
                                 title = "First Aid Exam",
                                 primaryText = "Add New Exam",
                                 secondaryText = "Edit Current Exam",
-                                onPrimaryClick = onAddExam,
-                                onSecondaryClick = onEditExam,
+                                onPrimaryClick = { checkTopicsWithoutExams() },
+                                onSecondaryClick = { checkTopicsWithExams() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -233,10 +435,235 @@ fun AdminMainPage(
                                 title = "First Aid Badge",
                                 primaryText = "Add New Badge",
                                 secondaryText = "Edit Current Badge",
-                                onPrimaryClick = onAddBadge,
+                                onPrimaryClick = { checkTopicsWithoutBadges() },
                                 onSecondaryClick = onEditBadge,
                                 modifier = Modifier.fillMaxSize()
                             )
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Dialog to show when no topics without badges are available
+        if (showNoTopicsDialog) {
+            Dialog(onDismissRequest = { showNoTopicsDialog = false }) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Topics Available",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF856404),
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "All first aid topics already have badges. You cannot add new badges at this time.",
+                            fontSize = 14.sp,
+                            color = Color(0xFF856404),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showNoTopicsDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.green_primary)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("OK", color = Color.White, fontFamily = cabin)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Dialog to show when no topics without exams are available (for Add Exam)
+        if (showNoExamTopicsDialog) {
+            Dialog(onDismissRequest = { showNoExamTopicsDialog = false }) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Topics Available",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF856404),
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "All first aid topics already have exams. You cannot add new exams at this time.",
+                            fontSize = 14.sp,
+                            color = Color(0xFF856404),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showNoExamTopicsDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.green_primary)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("OK", color = Color.White, fontFamily = cabin)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Dialog to show when no topics with exams are available (for Edit Exam)
+        if (showNoTopicsForEditDialog) {
+            Dialog(onDismissRequest = { showNoTopicsForEditDialog = false }) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Topics Available",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF856404),
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No first aid topics have exams yet. You cannot edit exams at this time.",
+                            fontSize = 14.sp,
+                            color = Color(0xFF856404),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showNoTopicsForEditDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.green_primary)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("OK", color = Color.White, fontFamily = cabin)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Dialog to show when no topics without modules are available (for Add Module)
+        if (showNoModuleTopicsDialog) {
+            Dialog(onDismissRequest = { showNoModuleTopicsDialog = false }) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Topics Available",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF856404),
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "All first aid topics already have modules. You cannot add new modules at this time.",
+                            fontSize = 14.sp,
+                            color = Color(0xFF856404),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showNoModuleTopicsDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.green_primary)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("OK", color = Color.White, fontFamily = cabin)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Dialog to show when no topics with modules are available (for Edit Module)
+        if (showNoTopicsForEditModuleDialog) {
+            Dialog(onDismissRequest = { showNoTopicsForEditModuleDialog = false }) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Topics Available",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF856404),
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No first aid topics have modules yet. You cannot edit modules at this time.",
+                            fontSize = 14.sp,
+                            color = Color(0xFF856404),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showNoTopicsForEditModuleDialog = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.green_primary)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("OK", color = Color.White, fontFamily = cabin)
                         }
                     }
                 }

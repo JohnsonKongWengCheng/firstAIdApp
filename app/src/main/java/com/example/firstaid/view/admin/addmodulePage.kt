@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.firstaid.R
@@ -33,6 +34,55 @@ import coil.compose.AsyncImage
 
 private data class ModuleTopicItem(val id: String, val title: String)
 
+private data class StepData(
+    val id: Int,
+    var title: TextFieldValue,
+    var content: TextFieldValue,
+    var description: TextFieldValue,
+    var imageUri: Uri?
+)
+
+private fun createContentEntries(
+    learningId: String,
+    steps: List<StepData>,
+    onComplete: (Boolean) -> Unit
+) {
+    val db = FirebaseFirestore.getInstance()
+    var completedCount = 0
+    val totalSteps = steps.size
+    var hasError = false
+    
+    if (totalSteps == 0) {
+        onComplete(true)
+        return
+    }
+    
+    steps.forEachIndexed { index, step ->
+        val contentDocRef = db.collection("Content").document()
+        val contentData = hashMapOf(
+            "contentId" to contentDocRef.id,
+            "learningId" to learningId,
+            "title" to step.title.text.trim(),
+            "content" to step.content.text.trim(),
+            "description" to step.description.text.trim(),
+            "stepNumber" to (index + 1),
+            "imageUrl" to step.imageUri?.toString() // Store image URI as string for now
+        )
+        
+        contentDocRef.set(contentData)
+            .addOnSuccessListener {
+                completedCount++
+                if (completedCount == totalSteps && !hasError) {
+                    onComplete(true)
+                }
+            }
+            .addOnFailureListener { e ->
+                hasError = true
+                onComplete(false)
+            }
+    }
+}
+
 @Composable
 fun AddModulePage(
     onBackClick: () -> Unit = {}
@@ -45,38 +95,54 @@ fun AddModulePage(
     var isLoading by remember { mutableStateOf(true) }
     var expanded by remember { mutableStateOf(false) }
     var selectedTopic by remember { mutableStateOf<ModuleTopicItem?>(null) }
+    var noTopicsAvailable by remember { mutableStateOf(false) }
 
-    var title by remember { mutableStateOf(TextFieldValue("")) }
-    var content by remember { mutableStateOf(TextFieldValue("")) }
-    var description by remember { mutableStateOf(TextFieldValue("")) }
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        selectedImageUri = uri
-    }
     var isSaving by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
 
-    // Step 2 states (appear after step 1 complete)
-    val isStep1Complete by remember {
-        derivedStateOf { selectedTopic != null && title.text.isNotBlank() && content.text.isNotBlank() && description.text.isNotBlank() }
-    }
-    var title2 by remember { mutableStateOf(TextFieldValue("")) }
-    var content2 by remember { mutableStateOf(TextFieldValue("")) }
-    var description2 by remember { mutableStateOf(TextFieldValue("")) }
-    var selectedImageUri2 by remember { mutableStateOf<Uri?>(null) }
-    val imagePickerLauncher2 = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        selectedImageUri2 = uri
-    }
+    // Dynamic steps management
+    var steps by remember { mutableStateOf(listOf(StepData(1, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), null))) }
+    var nextStepId by remember { mutableStateOf(2) }
 
     LaunchedEffect(Unit) {
+        // First get all first aid topics
         db.collection("First_Aid").get()
-            .addOnSuccessListener { qs ->
-                topics = qs.documents.map { d ->
-                    ModuleTopicItem(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
-                }.sortedBy { it.title }
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all modules to see which topics already have modules
+                db.collection("Learning")
+                    .get()
+                    .addOnSuccessListener { moduleResult ->
+                        val topicsWithModules = moduleResult.documents.mapNotNull { moduleDoc ->
+                            moduleDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Filter out topics that already have modules
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            if (!topicsWithModules.contains(firstAidId)) {
+                                ModuleTopicItem(id = firstAidId, title = doc.getString("title") ?: doc.id)
+                            } else null
+                        }.sortedBy { it.title }
+                        
+                        // Check if no topics are available
+                        noTopicsAvailable = topics.isEmpty()
+                        isLoading = false
+                    }
+                    .addOnFailureListener { exception ->
+                        // If module collection fails, show all topics
+                        topics = firstAidResult.documents.map { d ->
+                            ModuleTopicItem(id = d.getString("firstAidId") ?: d.id, title = d.getString("title") ?: d.id)
+                        }.sortedBy { it.title }
+                        noTopicsAvailable = false
+                        isLoading = false
+                    }
+            }
+            .addOnFailureListener { exception ->
+                // Handle error if needed
+                topics = emptyList()
+                noTopicsAvailable = true
                 isLoading = false
             }
-            .addOnFailureListener { isLoading = false }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -113,8 +179,8 @@ fun AddModulePage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
-                            .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
-                            .clickable { expanded = true },
+                            .background(if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC), RoundedCornerShape(10.dp))
+                            .clickable { if (!noTopicsAvailable) expanded = true },
                         contentAlignment = Alignment.CenterStart
                     ) {
                         Row(
@@ -125,14 +191,14 @@ fun AddModulePage(
                         ) {
                             Text(
                                 text = selectedTopic?.title ?: "Choose the First Aid Topic Title",
-                                color = if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
+                                color = if (noTopicsAvailable) Color.Gray else if (selectedTopic == null) Color(0xFFAAAAAA) else Color.Black,
                                 fontSize = 16.sp
                             )
                             Spacer(modifier = Modifier.weight(1f))
-                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null, tint = Color.Black)
+                            Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null, tint = if (noTopicsAvailable) Color.Gray else Color.Black)
                         }
 
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenu(expanded = expanded && !noTopicsAvailable, onDismissRequest = { expanded = false }) {
                             topics.forEach { item ->
                                 DropdownMenuItem(
                                     text = { Text(item.title) },
@@ -145,132 +211,150 @@ fun AddModulePage(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Title
-                    Text(text = "First Step", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = "Title:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        placeholder = { Text("Enter first step title", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Content:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = content,
-                        onValueChange = { content = it },
-                        placeholder = { Text("Enter first step content", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Description:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-                    // Image picker placeholder box (not implemented here)
-                    Text(text = "Image:", fontSize = 16.sp, color = Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
-                            .clickable { imagePickerLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (selectedImageUri != null) {
-                            AsyncImage(model = selectedImageUri, contentDescription = null)
-                        } else {
-                            Text(text = "+", color = Color(0xFF757575), fontSize = 24.sp)
+                    // Show message if no topics are available
+                    if (noTopicsAvailable) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "No Topics Available",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF856404),
+                                    fontFamily = cabin
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "All first aid topics already have modules. You cannot add new modules at this time.",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF856404),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
 
-                    // Step 2 (appears when step 1 complete)
-                    if (isStep1Complete) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
-                        Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                        Text(text = "Second Step", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
+                    // Dynamic steps rendering
+                    steps.forEachIndexed { index, step ->
+                        if (index > 0) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Step ${index + 1}",
+                                fontSize = 16.sp,
+                                color = Color.Black,
+                                fontFamily = cabin
+                            )
+                            
+                            // Remove Step button (show if there are 2 or more steps)
+                            if (steps.size > 1) {
+                                Button(
+                                    onClick = {
+                                        if (!noTopicsAvailable) {
+                                            steps = steps.filter { it.id != step.id }
+                                        }
+                                    },
+                                    enabled = !noTopicsAvailable,
+                                    modifier = Modifier.height(32.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color.Red.copy(alpha = 0.8f)
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Remove",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontFamily = cabin
+                                    )
+                                }
+                            }
+                        }
                         Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(text = "Title:", fontSize = 16.sp, color = Color.Black)
+                        
+                        Text(text = "Title:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = title2,
-                            onValueChange = { title2 = it },
-                            placeholder = { Text("Enter second step title", color = Color(0xFFAAAAAA)) },
+                            value = step.title,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    steps = steps.map { 
+                                        if (it.id == step.id) it.copy(title = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
+                            placeholder = { Text("Enter step ${index + 1} title", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Content:", fontSize = 16.sp, color = Color.Black)
+                        Text(text = "Content:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = content2,
-                            onValueChange = { content2 = it },
-                            placeholder = { Text("Enter second step content", color = Color(0xFFAAAAAA)) },
+                            value = step.content,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    steps = steps.map { 
+                                        if (it.id == step.id) it.copy(content = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
+                            placeholder = { Text("Enter step ${index + 1} content", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Description:", fontSize = 16.sp, color = Color.Black)
+                        Text(text = "Description:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = description2,
-                            onValueChange = { description2 = it },
+                            value = step.description,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    steps = steps.map { 
+                                        if (it.id == step.id) it.copy(description = newValue) else it 
+                                    }
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
                             placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -278,27 +362,66 @@ fun AddModulePage(
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color.Transparent,
                                 focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
                             )
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(text = "Image:", fontSize = 16.sp, color = Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
+                        val imageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                            steps = steps.map { 
+                                if (it.id == step.id) it.copy(imageUri = uri) else it 
+                            }
+                        }
+                        
                         Box(
                             modifier = Modifier
                                 .size(100.dp)
                                 .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
-                                .clickable { imagePickerLauncher2.launch("image/*") },
+                                .clickable { 
+                                    imageLauncher.launch("image/*")
+                                },
                             contentAlignment = Alignment.Center
                         ) {
-                            if (selectedImageUri2 != null) {
-                                AsyncImage(model = selectedImageUri2, contentDescription = null)
+                            if (step.imageUri != null) {
+                                AsyncImage(model = step.imageUri, contentDescription = null)
                             } else {
                                 Text(text = "+", color = Color(0xFF757575), fontSize = 24.sp)
                             }
                         }
+                    }
+
+                    // Add Step button
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Button(
+                        onClick = {
+                            if (!noTopicsAvailable) {
+                                steps = steps + StepData(
+                                    id = nextStepId,
+                                    title = TextFieldValue(""),
+                                    content = TextFieldValue(""),
+                                    description = TextFieldValue(""),
+                                    imageUri = null
+                                )
+                                nextStepId++
+                            }
+                        },
+                        enabled = !noTopicsAvailable,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledContentColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(text = "Add Step", color = colorResource(id = R.color.green_primary))
                     }
 
                     Spacer(modifier = Modifier.height(120.dp))
@@ -320,29 +443,46 @@ fun AddModulePage(
             Button(
                 onClick = {
                     val topic = selectedTopic
-                    if (!isSaving && topic != null && title.text.isNotBlank() && content.text.isNotBlank()) {
+                    val firstStep = steps.firstOrNull()
+                    if (!isSaving && topic != null && firstStep != null && 
+                        firstStep.title.text.isNotBlank() && firstStep.content.text.isNotBlank()) {
                         isSaving = true
                         val docRef = db.collection("Learning").document()
+                        val learningId = docRef.id
                         val data = hashMapOf(
-                            "learningId" to docRef.id,
+                            "learningId" to learningId,
                             "firstAidId" to topic.id,
-                            "title" to title.text.trim(),
-                            "content" to content.text.trim(),
-                            "description" to description.text.trim()
+                            "title" to firstStep.title.text.trim(),
+                            "content" to firstStep.content.text.trim(),
+                            "description" to firstStep.description.text.trim()
                         )
                         docRef.set(data)
                             .addOnSuccessListener {
-                                showSuccess = true
-                                scope.launch {
-                                    kotlinx.coroutines.delay(1000)
-                                    showSuccess = false
-                                    onBackClick()
+                                // Create Content entries for each step
+                                createContentEntries(learningId, steps) { success ->
+                                    if (success) {
+                                        showSuccess = true
+                                        scope.launch {
+                                            kotlinx.coroutines.delay(1000)
+                                            showSuccess = false
+                                            onBackClick()
+                                        }
+                                    } else {
+                                        isSaving = false
+                                    }
                                 }
                             }
-                            .addOnFailureListener { isSaving = false }
+                            .addOnFailureListener { 
+                                isSaving = false 
+                            }
                     }
                 },
-                enabled = !isSaving && selectedTopic != null && title.text.isNotBlank() && content.text.isNotBlank(),
+                enabled = !isSaving && selectedTopic != null && !noTopicsAvailable &&
+                    steps.all { step -> 
+                        step.title.text.isNotBlank() && 
+                        step.content.text.isNotBlank() && 
+                        step.description.text.isNotBlank() 
+                    },
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

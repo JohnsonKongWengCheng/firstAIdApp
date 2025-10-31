@@ -3,12 +3,14 @@ package com.example.firstaid.view.admin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,11 +51,11 @@ data class QuestionData(
 
 data class EditableQuestion(
     val questionId: String,
-    var question: String,
-    var correctAnswer: String,
-    var otherOption1: String,
-    var otherOption2: String,
-    var otherOption3: String
+    val question: String,
+    val correctAnswer: String,
+    val otherOption1: String,
+    val otherOption2: String,
+    val otherOption3: String
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +75,7 @@ fun EditExamPage(
     var loading by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     var showTopicDropdown by remember { mutableStateOf(false) }
+    var noTopicsAvailable by remember { mutableStateOf(false) }
 
     // Form fields
     var description by remember { mutableStateOf("") }
@@ -81,19 +84,51 @@ fun EditExamPage(
     // Load topics on first composition
     LaunchedEffect(Unit) {
         loading = true
+        // First get all first aid topics
         firestore.collection("First_Aid").get()
-            .addOnSuccessListener { snapshot ->
-                topics = snapshot.documents.mapNotNull { doc ->
-                    val title = doc.getString("title") ?: return@mapNotNull null
-                    val firstAidId = doc.getString("firstAidId") ?: doc.id
-                    ExamTopicItem(
-                        firstAidId = firstAidId,
-                        title = title
-                    )
-                }
-                loading = false
+            .addOnSuccessListener { firstAidResult ->
+                // Then get all exams to see which topics have exams
+                firestore.collection("Exam")
+                    .get()
+                    .addOnSuccessListener { examResult ->
+                        val topicsWithExams = examResult.documents.mapNotNull { examDoc ->
+                            examDoc.getString("firstAidId")
+                        }.toSet()
+                        
+                        // Filter to only show topics that have exams
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            val title = doc.getString("title") ?: return@mapNotNull null
+                            if (topicsWithExams.contains(firstAidId)) {
+                                ExamTopicItem(
+                                    firstAidId = firstAidId,
+                                    title = title
+                                )
+                            } else null
+                        }
+                        
+                        // Check if no topics are available
+                        noTopicsAvailable = topics.isEmpty()
+                        loading = false
+                    }
+                    .addOnFailureListener { exception ->
+                        // If exam collection fails, show all topics
+                        topics = firstAidResult.documents.mapNotNull { doc ->
+                            val title = doc.getString("title") ?: return@mapNotNull null
+                            val firstAidId = doc.getString("firstAidId") ?: doc.id
+                            ExamTopicItem(
+                                firstAidId = firstAidId,
+                                title = title
+                            )
+                        }
+                        noTopicsAvailable = false
+                        loading = false
+                    }
             }
-            .addOnFailureListener {
+            .addOnFailureListener { exception ->
+                // Handle error if needed
+                topics = emptyList()
+                noTopicsAvailable = true
                 loading = false
             }
     }
@@ -181,6 +216,9 @@ fun EditExamPage(
             // Check if description changed
             val descriptionChanged = description != selectedExam!!.description
             
+            // Check if questions were removed (number decreased)
+            val questionsRemoved = editableQuestions.size < questions.size
+            
             // Check if any question changed or if there are new questions
             val questionsChanged = editableQuestions.any { editableQ ->
                 if (editableQ.questionId.startsWith("new_")) {
@@ -203,7 +241,7 @@ fun EditExamPage(
                 }
             }
             
-            descriptionChanged || questionsChanged
+            descriptionChanged || questionsChanged || questionsRemoved
         }
     }
 
@@ -219,6 +257,24 @@ fun EditExamPage(
                 (q.otherOption1.isNotBlank() || q.otherOption2.isNotBlank() || q.otherOption3.isNotBlank())
             } &&
             hasChanges
+        }
+    }
+
+    // Function to remove a question
+    fun removeQuestion(questionToRemove: EditableQuestion) {
+        // Remove from local list
+        editableQuestions = editableQuestions.filter { it != questionToRemove }
+        
+        // If it's an existing question (not a new one), delete it from Firebase immediately
+        if (!questionToRemove.questionId.startsWith("new_")) {
+            firestore.collection("Question")
+                .document(questionToRemove.questionId)
+                .delete()
+                .addOnFailureListener { exception ->
+                    // If deletion fails, we could show an error message
+                    // For now, we'll just log it
+                    println("Failed to delete question from Firebase: ${exception.message}")
+                }
         }
     }
 
@@ -286,6 +342,7 @@ fun EditExamPage(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
+                    .imePadding()
                     .padding(horizontal = 16.dp)
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -304,8 +361,8 @@ fun EditExamPage(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showTopicDropdown = true },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFECECEC)),
+                            .clickable { if (!noTopicsAvailable) showTopicDropdown = true },
+                        colors = CardDefaults.cardColors(containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC)),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(
@@ -318,18 +375,18 @@ fun EditExamPage(
                             Text(
                                 text = selectedTopic?.title ?: "Select Topic",
                                 fontSize = 16.sp,
-                                color = if (selectedTopic != null) Color.Black else Color(0xFFAAAAAA)
+                                color = if (noTopicsAvailable) Color.Gray else if (selectedTopic != null) Color.Black else Color(0xFFAAAAAA)
                             )
                             Icon(
                                 imageVector = Icons.Filled.ArrowDropDown,
                                 contentDescription = "Dropdown",
-                                tint = Color.Black
+                                tint = if (noTopicsAvailable) Color.Gray else Color.Black
                             )
                         }
                     }
 
                     DropdownMenu(
-                        expanded = showTopicDropdown,
+                        expanded = showTopicDropdown && !noTopicsAvailable,
                         onDismissRequest = { showTopicDropdown = false }
                     ) {
                         topics.forEach { topic ->
@@ -344,6 +401,35 @@ fun EditExamPage(
                     }
                 }
 
+                // Show message if no topics are available
+                if (noTopicsAvailable) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "No Topics Available",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF856404)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "No first aid topics have exams yet. You cannot edit exams at this time.",
+                                fontSize = 14.sp,
+                                color = Color(0xFF856404),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Description
@@ -351,20 +437,20 @@ fun EditExamPage(
                     text = "Description:",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.Black,
+                    color = if (noTopicsAvailable) Color.Gray else Color.Black,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 OutlinedTextField(
                     value = description,
-                    onValueChange = { description = it },
+                    onValueChange = { if (!noTopicsAvailable) description = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(80.dp),
-                    enabled = selectedTopic != null,
+                    enabled = selectedTopic != null && !noTopicsAvailable,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                        focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                        unfocusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent,
                         disabledContainerColor = Color(0xFFF5F5F5),
@@ -379,13 +465,38 @@ fun EditExamPage(
 
                 // Dynamic Questions Section
                 editableQuestions.forEachIndexed { index, question ->
-                    Text(
-                        text = "Question ${index + 1}",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Question ${index + 1}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        
+                        // Remove Question button (show if there are 2 or more questions)
+                        if (editableQuestions.size > 1) {
+                            Button(
+                                onClick = { removeQuestion(question) },
+                                modifier = Modifier.height(32.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.Red.copy(alpha = 0.8f)
+                                ),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "Remove",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
 
                     // Question Text
                     Text(
@@ -398,7 +509,13 @@ fun EditExamPage(
 
                     OutlinedTextField(
                         value = question.question,
-                        onValueChange = { question.question = it },
+                        onValueChange = { newValue ->
+                            editableQuestions = editableQuestions.map { q ->
+                                if (q.questionId == question.questionId) {
+                                    q.copy(question = newValue)
+                                } else q
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(80.dp),
@@ -426,7 +543,13 @@ fun EditExamPage(
 
                     OutlinedTextField(
                         value = question.correctAnswer,
-                        onValueChange = { question.correctAnswer = it },
+                        onValueChange = { newValue ->
+                            editableQuestions = editableQuestions.map { q ->
+                                if (q.questionId == question.questionId) {
+                                    q.copy(correctAnswer = newValue)
+                                } else q
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter correct answer") },
                         colors = OutlinedTextFieldDefaults.colors(
@@ -452,7 +575,13 @@ fun EditExamPage(
 
                     OutlinedTextField(
                         value = question.otherOption1,
-                        onValueChange = { question.otherOption1 = it },
+                        onValueChange = { newValue ->
+                            editableQuestions = editableQuestions.map { q ->
+                                if (q.questionId == question.questionId) {
+                                    q.copy(otherOption1 = newValue)
+                                } else q
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter option 1") },
                         colors = OutlinedTextFieldDefaults.colors(
@@ -477,7 +606,13 @@ fun EditExamPage(
 
                     OutlinedTextField(
                         value = question.otherOption2,
-                        onValueChange = { question.otherOption2 = it },
+                        onValueChange = { newValue ->
+                            editableQuestions = editableQuestions.map { q ->
+                                if (q.questionId == question.questionId) {
+                                    q.copy(otherOption2 = newValue)
+                                } else q
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter option 2") },
                         colors = OutlinedTextFieldDefaults.colors(
@@ -502,7 +637,13 @@ fun EditExamPage(
 
                     OutlinedTextField(
                         value = question.otherOption3,
-                        onValueChange = { question.otherOption3 = it },
+                        onValueChange = { newValue ->
+                            editableQuestions = editableQuestions.map { q ->
+                                if (q.questionId == question.questionId) {
+                                    q.copy(otherOption3 = newValue)
+                                } else q
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter option 3") },
                         colors = OutlinedTextFieldDefaults.colors(
@@ -582,7 +723,7 @@ fun EditExamPage(
                             }
                     }
                 },
-                enabled = canConfirm,
+                enabled = canConfirm && !noTopicsAvailable,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()
@@ -610,31 +751,39 @@ fun EditExamPage(
             }
         }
 
-        // Success dialog
+        // Success overlay
         if (showSuccessDialog) {
-            Dialog(
-                onDismissRequest = { },
-                properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
             ) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF4DB648)),
-                    shape = RoundedCornerShape(10.dp)
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(32.dp)
+                            .fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Success",
+                            tint = Color(0xFF4DB648),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Exam Updated Successfully!",
+                            color = Color(0xFF4DB648),
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

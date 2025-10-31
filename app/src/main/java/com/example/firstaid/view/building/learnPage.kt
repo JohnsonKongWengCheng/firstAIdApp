@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
@@ -167,166 +168,161 @@ fun LearnPage(
         refreshLearningProgress()
     }
     
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
+        // Top Bar
+        TopBarWithBack(
+            title = "Learn",
+            onBackClick = onBackClick
+        )
+        
+        // Main Content
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 16.dp)
         ) {
-            // Top Bar
-            TopBarWithBack(
-                title = "Learn",
-                onBackClick = onBackClick
+            Spacer(modifier = Modifier.height(29.dp))
+            
+            // Title
+            Text(
+                text = "First Aid Building",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = colorResource(id = R.color.green_primary),
+                fontFamily = cabin,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
             )
             
-            // Main Content
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
+            Spacer(modifier = Modifier.height(62.dp))
+            
+            // Divider line
+            Divider(
+                color = Color(0xFFB8B8B8),
+                thickness = 1.dp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(18.dp))
+            
+            // Tab Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Spacer(modifier = Modifier.height(29.dp))
-                
-                // Title
-                Text(
-                    text = "First Aid Building",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colorResource(id = R.color.green_primary),
-                    fontFamily = cabin,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-                
-                Spacer(modifier = Modifier.height(62.dp))
-                
-                // Divider line
-                Divider(
-                    color = Color(0xFFB8B8B8),
-                    thickness = 1.dp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Spacer(modifier = Modifier.height(18.dp))
-                
-                // Tab Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                // Learn Tab
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Learn Tab
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Learn",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
-                            fontFamily = cabin
+                    Text(
+                        text = "Learn",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
+                        fontFamily = cabin
+                    )
+                    if (selectedTab == "Learn") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(100.dp)
+                                .height(3.dp)
+                                .background(colorResource(id = R.color.green_primary), RoundedCornerShape(2.dp))
                         )
-                        if (selectedTab == "Learn") {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .height(3.dp)
-                                    .background(colorResource(id = R.color.green_primary), RoundedCornerShape(2.dp))
-                            )
-                        }
-                    }
-                    
-                    // Exam Tab
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Exam",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
-                            fontFamily = cabin
-                        )
-                        if (selectedTab == "Exam") {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .height(3.dp)
-                                    .background(colorResource(id = R.color.green_primary), RoundedCornerShape(2.dp))
-                            )
-                        }
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(35.dp))
-                
-                // Content based on selected tab
-                if (selectedTab == "Learn") {
-                    if (isLoading) {
+                // Exam Tab
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Exam",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
+                        fontFamily = cabin
+                    )
+                    if (selectedTab == "Exam") {
+                        Spacer(modifier = Modifier.height(4.dp))
                         Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                color = colorResource(id = R.color.green_primary)
-                            )
-                        }
-                    } else if (errorMessage != null) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = errorMessage ?: "An error occurred",
-                                color = Color.Red,
-                                fontFamily = cabin
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(learnTopics) { learning ->
-                                val firstAidId = learning["firstAidId"] as? String ?: ""
-                                val learningId = learning["learningId"] as? String ?: ""
-                                val title = firstAidTitles[firstAidId] ?: firstAidId
-                                val status = learningProgress[learningId] ?: "Pending"
-                                val isCompleted = status == "Completed"
-                                android.util.Log.d("LearnPage", "Rendering card - learningId: $learningId, status: $status, isCompleted: $isCompleted")
-                                LearnTopicCard(
-                                    title = title,
-                                    isCompleted = isCompleted,
-                                    onClick = { onTopicClick(learningId) },
-                                    fontFamily = cabin
-                                )
-                            }
-                        }
+                            modifier = Modifier
+                                .width(100.dp)
+                                .height(3.dp)
+                                .background(colorResource(id = R.color.green_primary), RoundedCornerShape(2.dp))
+                        )
                     }
-                } else {
-                    // Exam content - placeholder for now
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(35.dp))
+            
+            // Content based on selected tab
+            if (selectedTab == "Learn") {
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = colorResource(id = R.color.green_primary)
+                        )
+                    }
+                } else if (errorMessage != null) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Exam content coming soon",
-                            fontSize = 16.sp,
-                            color = Color.Gray,
+                            text = errorMessage ?: "An error occurred",
+                            color = Color.Red,
                             fontFamily = cabin
                         )
                     }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 120.dp) // Generous bottom padding to ensure no overlap
+                    ) {
+                        items(learnTopics) { learning ->
+                            val firstAidId = learning["firstAidId"] as? String ?: ""
+                            val learningId = learning["learningId"] as? String ?: ""
+                            val title = firstAidTitles[firstAidId] ?: firstAidId
+                            val status = learningProgress[learningId] ?: "Pending"
+                            val isCompleted = status == "Completed"
+                            android.util.Log.d("LearnPage", "Rendering card - learningId: $learningId, status: $status, isCompleted: $isCompleted")
+                            LearnTopicCard(
+                                title = title,
+                                isCompleted = isCompleted,
+                                onClick = { onTopicClick(learningId) },
+                                fontFamily = cabin
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Exam content - placeholder for now
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 120.dp), // Generous bottom padding to ensure no overlap
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Exam content coming soon",
+                        fontSize = 16.sp,
+                        color = Color.Gray,
+                        fontFamily = cabin
+                    )
                 }
             }
         }
-        
-        // Bottom Bar - positioned at bottom
+
+        // Bottom Bar
         BottomBar(
             selected = BottomItem.LEARN,
-            onSelected = onSelectBottom,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            onSelected = onSelectBottom
         )
     }
 }

@@ -38,20 +38,7 @@ fun BottomBar(
                     .align(Alignment.TopCenter)
                     .background(Color.LightGray) // border color
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 35.dp, top = 0.dp)
-            ) {
-                if (selected == BottomItem.FIRST_AID) {
-                    Box(
-                        modifier = Modifier
-                            .width(55.dp)
-                            .height(3.dp)
-                            .background(Color.Black, RoundedCornerShape(2.dp))
-                    )
-                }
-            }
+            // Removed active tab indicator bars
             Row(
                 modifier = Modifier
                     .fillMaxSize()

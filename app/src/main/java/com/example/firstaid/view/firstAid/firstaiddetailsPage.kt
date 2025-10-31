@@ -40,10 +40,15 @@ import com.google.firebase.firestore.FirebaseFirestore
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import java.util.Locale
+import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
 
 private data class FirstAidItem(val id: String, val title: String)
 private data class LearningItem(val id: String, val learningId: String, val firstAidId: String)
-private data class ContentItem(val id: String, val contentId: String, val learningId: String, val title: String, val content: String, val imageUrl: String? = null)
+private data class ContentItem(val id: String, val contentId: String, val learningId: String, val title: String, val content: String, val stepNumber: Int, val imageUrl: String? = null)
 
 @Composable
 fun FirstAidDetailsPage(
@@ -142,9 +147,10 @@ fun FirstAidDetailsPage(
                                         learningId = doc.getString("learningId") ?: "",
                                         title = doc.getString("title") ?: "",
                                         content = doc.getString("content") ?: "",
+                                        stepNumber = (doc.getLong("stepNumber")?.toInt()) ?: 1,
                                         imageUrl = doc.getString("imageUrl")
                                     )
-                                }.sortedBy { it.contentId }
+                                }.sortedBy { it.stepNumber }
 
                                 contentItems = contents
                                 currentStepIndex = 0
@@ -272,19 +278,15 @@ fun FirstAidDetailsPage(
                 // Illustration
                 Spacer(modifier = Modifier.height(24.dp))
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    if (currentContent.imageUrl != null) {
-                        // TODO: Use Coil for image loading from URL
-                        Box(
+                    if (!currentContent.imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = currentContent.imageUrl,
+                            contentDescription = "Step illustration",
                             modifier = Modifier
                                 .width(266.dp)
-                                .height(236.dp)
-                                .background(Color(0xFFEFEFEF), RoundedCornerShape(8.dp))
-                        ) {
-                            Text(
-                                "Image: ${currentContent.imageUrl}",
-                                modifier = Modifier.align(Alignment.Center)
-                            )
-                        }
+                                .height(236.dp),
+                            contentScale = ContentScale.Crop
+                        )
                     } else {
                         Box(
                             modifier = Modifier

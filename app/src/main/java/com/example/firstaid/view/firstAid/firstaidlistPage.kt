@@ -46,32 +46,102 @@ fun FirstAidListPage(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val items = remember { mutableStateListOf<FirstAid>() }
+    val topicsWithContent = remember { mutableStateSetOf<String>() }
 
-    // Listen to Firestore collection "First_Aid"
+    // Check for topics that have both Learning modules AND Content entries
     DisposableEffect(Unit) {
         val db = FirebaseFirestore.getInstance()
-        val registration = db.collection("First_Aid")
-            .addSnapshotListener { snapshot, e ->
-                if (e != null) {
-                    errorMessage = e.localizedMessage ?: "Failed to load First Aid list"
+        var learningRegistration: com.google.firebase.firestore.ListenerRegistration? = null
+        var firstAidRegistration: com.google.firebase.firestore.ListenerRegistration? = null
+        
+        // Query Learning collection to find topics with learning modules
+        learningRegistration = db.collection("Learning")
+            .addSnapshotListener { learningSnapshot, learningError ->
+                if (learningError != null) {
+                    errorMessage = learningError.localizedMessage ?: "Failed to load learning data"
                     isLoading = false
                     return@addSnapshotListener
                 }
-                val docs = snapshot?.documents ?: emptyList()
-                items.clear()
-                for (doc in docs) {
-                    val title = (doc.get("title") as? String)?.trim().orEmpty()
-                    val firstAidId = (doc.get("firstAidId") as? String)?.trim().orEmpty()
-                    // Use firstAidId field as the ID, fallback to document id if not available
-                    val resolvedId = if (firstAidId.isNotEmpty()) firstAidId else doc.id
-                    val resolvedTitle = if (title.isNotEmpty()) title else doc.id
-                    println("DEBUG: FirstAidListPage - doc.id: '${doc.id}', firstAidId: '$firstAidId', title: '$resolvedTitle', resolvedId: '$resolvedId'")
-                    items.add(FirstAid(id = resolvedId, title = resolvedTitle))
+                
+                val learningDocs = learningSnapshot?.documents ?: emptyList()
+                val learningIds = mutableSetOf<String>()
+                val firstAidIds = mutableSetOf<String>()
+                
+                for (doc in learningDocs) {
+                    val firstAidId = (doc.get("firstAidId") as? String)?.trim()
+                    val learningId = (doc.get("learningId") as? String)?.trim()
+                    if (!firstAidId.isNullOrEmpty() && !learningId.isNullOrEmpty()) {
+                        firstAidIds.add(firstAidId)
+                        learningIds.add(learningId)
+                    }
                 }
-                errorMessage = null
-                isLoading = false
+                
+                // Now check which learning modules have actual content
+                if (learningIds.isNotEmpty()) {
+                    db.collection("Content")
+                        .whereIn("learningId", learningIds.toList())
+                        .get()
+                        .addOnSuccessListener { contentSnapshot ->
+                            val contentLearningIds = contentSnapshot.documents.mapNotNull { doc ->
+                                doc.getString("learningId")?.trim()
+                            }.toSet()
+                            
+                            // Find which firstAidIds have both learning modules and content
+                            topicsWithContent.clear()
+                            for (doc in learningDocs) {
+                                val firstAidId = (doc.get("firstAidId") as? String)?.trim()
+                                val learningId = (doc.get("learningId") as? String)?.trim()
+                                if (!firstAidId.isNullOrEmpty() && 
+                                    !learningId.isNullOrEmpty() && 
+                                    contentLearningIds.contains(learningId)) {
+                                    topicsWithContent.add(firstAidId)
+                                }
+                            }
+                            
+                            // Now query First_Aid collection and filter by topics with content
+                            firstAidRegistration = db.collection("First_Aid")
+                                .addSnapshotListener { snapshot, e ->
+                                    if (e != null) {
+                                        errorMessage = e.localizedMessage ?: "Failed to load First Aid list"
+                                        isLoading = false
+                                        return@addSnapshotListener
+                                    }
+                                    
+                                    val docs = snapshot?.documents ?: emptyList()
+                                    items.clear()
+                                    for (doc in docs) {
+                                        val title = (doc.get("title") as? String)?.trim().orEmpty()
+                                        val firstAidId = (doc.get("firstAidId") as? String)?.trim().orEmpty()
+                                        // Use firstAidId field as the ID, fallback to document id if not available
+                                        val resolvedId = if (firstAidId.isNotEmpty()) firstAidId else doc.id
+                                        val resolvedTitle = if (title.isNotEmpty()) title else doc.id
+                                        
+                                        // Only add topics that have both learning modules and content
+                                        if (topicsWithContent.contains(resolvedId)) {
+                                            println("DEBUG: FirstAidListPage - doc.id: '${doc.id}', firstAidId: '$firstAidId', title: '$resolvedTitle', resolvedId: '$resolvedId'")
+                                            items.add(FirstAid(id = resolvedId, title = resolvedTitle))
+                                        }
+                                    }
+                                    errorMessage = null
+                                    isLoading = false
+                                }
+                        }
+                        .addOnFailureListener { e ->
+                            errorMessage = e.localizedMessage ?: "Failed to load content data"
+                            isLoading = false
+                        }
+                } else {
+                    // No learning modules found, clear items
+                    items.clear()
+                    errorMessage = null
+                    isLoading = false
+                }
             }
-        onDispose { registration.remove() }
+        
+        onDispose { 
+            learningRegistration?.remove()
+            firstAidRegistration?.remove()
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {

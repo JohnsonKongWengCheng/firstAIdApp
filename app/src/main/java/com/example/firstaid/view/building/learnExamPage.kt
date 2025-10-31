@@ -110,16 +110,47 @@ fun LearnExamPage(
             db.collection("Exam")
                 .get()
                 .addOnSuccessListener { examDocs ->
-                    val exams = examDocs.mapNotNull { doc ->
+                    val allExams = examDocs.mapNotNull { doc ->
                         mapOf(
                             "examId" to (doc.getString("examId") ?: doc.id),
                             "description" to (doc.getString("description") ?: ""),
                             "firstAidId" to (doc.getString("firstAidId") ?: "")
                         )
                     }
-                    examTopics = exams
-                    examLoaded = true
-                    if (titlesLoaded && learnLoaded) isLoading = false
+                    
+                    // Filter exams that have questions
+                    if (allExams.isNotEmpty()) {
+                        val examIds = allExams.map { it["examId"] as String }
+                        android.util.Log.d("LearnExamPage", "Checking questions for ${examIds.size} exams: $examIds")
+                        db.collection("Question")
+                            .whereIn("examId", examIds)
+                            .get()
+                            .addOnSuccessListener { questionDocs ->
+                                val examsWithQuestions = questionDocs.documents.mapNotNull { doc ->
+                                    doc.getString("examId")
+                                }.toSet()
+                                android.util.Log.d("LearnExamPage", "Found questions for exams: $examsWithQuestions")
+                                
+                                examTopics = allExams.filter { exam ->
+                                    val hasQuestions = examsWithQuestions.contains(exam["examId"])
+                                    android.util.Log.d("LearnExamPage", "Exam ${exam["examId"]} has questions: $hasQuestions")
+                                    hasQuestions
+                                }
+                                android.util.Log.d("LearnExamPage", "Filtered to ${examTopics.size} exams with questions")
+                                examLoaded = true
+                                if (titlesLoaded && learnLoaded) isLoading = false
+                            }
+                            .addOnFailureListener { e ->
+                                // If question query fails, show all exams (fallback)
+                                examTopics = allExams
+                                examLoaded = true
+                                if (titlesLoaded && learnLoaded) isLoading = false
+                            }
+                    } else {
+                        examTopics = allExams
+                        examLoaded = true
+                        if (titlesLoaded && learnLoaded) isLoading = false
+                    }
                 }
                 .addOnFailureListener { e ->
                     errorMessage = e.localizedMessage ?: "Failed to load exams"
@@ -261,29 +292,26 @@ fun LearnExamPage(
         refreshTrigger++
     }
     
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
+        // Top Bar
+        TopBar()
+        
+        // Main Content
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 16.dp)
         ) {
-            // Top Bar
-            TopBar()
-            
-            // Main Content
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Spacer(modifier = Modifier.height(29.dp))
+            Spacer(modifier = Modifier.height(29.dp))
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 20.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 20.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -390,7 +418,9 @@ fun LearnExamPage(
                 } else if (selectedTab == "Learn") {
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 20.dp)
                     ) {
                         items(learnTopics) { learning ->
                             val firstAidId = learning["firstAidId"] as? String ?: ""
@@ -410,7 +440,9 @@ fun LearnExamPage(
                 } else {
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 80.dp) // Reduced bottom padding
                     ) {
                         items(examTopics) { exam ->
                             val firstAidId = exam["firstAidId"] as? String ?: ""
@@ -455,13 +487,11 @@ fun LearnExamPage(
                     }
                 }
             }
-        }
         
-        // Bottom Bar - positioned at bottom
+        // Bottom Bar
         BottomBar(
             selected = BottomItem.LEARN,
-            onSelected = onSelectBottom,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            onSelected = onSelectBottom
         )
         
         // Unavailable exam message dialog
