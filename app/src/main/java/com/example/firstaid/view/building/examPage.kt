@@ -90,22 +90,26 @@ fun ExamPage(
                                 }.toSet()
                                 android.util.Log.d("ExamPage", "Found questions for exams: $examsWithQuestions")
                                 
-                                examTopics = allExams.filter { exam ->
+                                val filteredExams = allExams.filter { exam ->
                                     val hasQuestions = examsWithQuestions.contains(exam["examId"])
                                     android.util.Log.d("ExamPage", "Exam ${exam["examId"]} has questions: $hasQuestions")
                                     hasQuestions
                                 }
+                                // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
+                                examTopics = filteredExams
                                 android.util.Log.d("ExamPage", "Filtered to ${examTopics.size} exams with questions")
                                 examsLoaded = true
                                 if (titlesLoaded) isLoading = false
                             }
                             .addOnFailureListener { e ->
                                 // If question query fails, show all exams (fallback)
+                                // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
                                 examTopics = allExams
                                 examsLoaded = true
                                 if (titlesLoaded) isLoading = false
                             }
                     } else {
+                        // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
                         examTopics = allExams
                         examsLoaded = true
                         if (titlesLoaded) isLoading = false
@@ -239,11 +243,20 @@ fun ExamPage(
                             )
                         }
                     } else {
+                        // Re-sort examTopics by title to ensure alphabetical order (case-insensitive)
+                        val sortedExamTopics = remember(examTopics, firstAidTitles) {
+                            examTopics.sortedBy { exam ->
+                                val firstAidId = exam["firstAidId"] as? String ?: ""
+                                val title = firstAidTitles[firstAidId] ?: firstAidId
+                                title.lowercase() // Case-insensitive sorting
+                            }
+                        }
+                        
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(examTopics) { exam ->
+                            items(sortedExamTopics) { exam ->
                                 val firstAidId = exam["firstAidId"] as? String ?: ""
                                 val title = firstAidTitles[firstAidId] ?: firstAidId
                                 ExamTopicCard(

@@ -373,7 +373,7 @@ fun EditExamPage(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = selectedTopic?.title ?: "Select Topic",
+                                text = selectedTopic?.title ?: "Choose the First Aid Topic Title",
                                 fontSize = 16.sp,
                                 color = if (noTopicsAvailable) Color.Gray else if (selectedTopic != null) Color.Black else Color(0xFFAAAAAA)
                             )
@@ -432,39 +432,39 @@ fun EditExamPage(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Description
-                Text(
-                    text = "Description:",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (noTopicsAvailable) Color.Gray else Color.Black,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                if (selectedTopic != null) {
+                    // Description
+                    Text(
+                        text = "Description:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (noTopicsAvailable) Color.Gray else Color.Black,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { if (!noTopicsAvailable) description = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(80.dp),
-                    enabled = selectedTopic != null && !noTopicsAvailable,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        unfocusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledContainerColor = Color(0xFFF5F5F5),
-                        disabledTextColor = Color.Gray
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    maxLines = 3
-                )
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { if (!noTopicsAvailable) description = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp),
+                        enabled = selectedTopic != null && !noTopicsAvailable,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            unfocusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledTextColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        maxLines = 3
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-
-                // Dynamic Questions Section
-                editableQuestions.forEachIndexed { index, question ->
+                    // Dynamic Questions Section
+                    editableQuestions.forEachIndexed { index, question ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -666,36 +666,36 @@ fun EditExamPage(
                             modifier = Modifier.padding(vertical = 16.dp)
                         )
                     }
-                }
-                
-                // Add Question Button (only show if topic is selected)
-                if (selectedTopic != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Button(
-                        onClick = {
-                            // Add a new empty question
-                            val newQuestion = EditableQuestion(
-                                questionId = "new_${System.currentTimeMillis()}", // Temporary ID for new questions
-                                question = "",
-                                correctAnswer = "",
-                                otherOption1 = "",
-                                otherOption2 = "",
-                                otherOption3 = ""
-                            )
-                            editableQuestions = editableQuestions + newQuestion
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6F3E6)),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(text = "Add Question", color = Color(0xFF4DB648))
                     }
+
+                    // Add Question Button (only show if topic is selected)
+                    if (selectedTopic != null) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = {
+                                val newQuestion = EditableQuestion(
+                                    questionId = "new_${System.currentTimeMillis()}",
+                                    question = "",
+                                    correctAnswer = "",
+                                    otherOption1 = "",
+                                    otherOption2 = "",
+                                    otherOption3 = ""
+                                )
+                                editableQuestions = editableQuestions + newQuestion
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6F3E6)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(text = "Add Question", color = Color(0xFF4DB648))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
                 }
-                
-                Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
             }
         }
 

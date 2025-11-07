@@ -111,6 +111,7 @@ fun LearnPage(
                             "isCompleted" to false
                         )
                     }
+                    // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
                     learnTopics = learnings
                     learningLoaded = true
                     if (titlesLoaded && progressLoaded) isLoading = false
@@ -279,13 +280,22 @@ fun LearnPage(
                         )
                     }
                 } else {
+                    // Re-sort learnTopics by title to ensure alphabetical order (case-insensitive)
+                    val sortedLearnTopics = remember(learnTopics, firstAidTitles) {
+                        learnTopics.sortedBy { learning ->
+                            val firstAidId = learning["firstAidId"] as? String ?: ""
+                            val title = firstAidTitles[firstAidId] ?: firstAidId
+                            title.lowercase() // Case-insensitive sorting
+                        }
+                    }
+                    
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(bottom = 120.dp) // Generous bottom padding to ensure no overlap
                     ) {
-                        items(learnTopics) { learning ->
+                        items(sortedLearnTopics) { learning ->
                             val firstAidId = learning["firstAidId"] as? String ?: ""
                             val learningId = learning["learningId"] as? String ?: ""
                             val title = firstAidTitles[firstAidId] ?: firstAidId

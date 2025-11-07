@@ -42,6 +42,7 @@ import android.util.Log
 import java.util.Locale
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ fun FirstAidDetailsPage(
     var currentStepIndex by remember { mutableStateOf(0) }
     var isTtsInitialized by remember { mutableStateOf(false) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+    var autoPlayedSteps by remember { mutableStateOf(setOf<Int>()) }
 
     val db = FirebaseFirestore.getInstance()
 
@@ -141,6 +143,8 @@ fun FirstAidDetailsPage(
                             .get()
                             .addOnSuccessListener { contentDocs ->
                                 val contents = contentDocs.documents.mapNotNull { doc ->
+                                    val imageUrl = doc.getString("imageUrl")
+                                    Log.d("FirstAidDetails", "Loaded content - stepNumber: ${doc.getLong("stepNumber")}, imageUrl: $imageUrl")
                                     ContentItem(
                                         id = doc.id,
                                         contentId = doc.getString("contentId") ?: "",
@@ -148,7 +152,7 @@ fun FirstAidDetailsPage(
                                         title = doc.getString("title") ?: "",
                                         content = doc.getString("content") ?: "",
                                         stepNumber = (doc.getLong("stepNumber")?.toInt()) ?: 1,
-                                        imageUrl = doc.getString("imageUrl")
+                                        imageUrl = imageUrl
                                     )
                                 }.sortedBy { it.stepNumber }
 
@@ -172,6 +176,17 @@ fun FirstAidDetailsPage(
         } catch (e: Exception) {
             errorMessage = e.localizedMessage ?: "Failed to load data"
             isLoading = false
+        }
+    }
+
+    // Auto play voice once per step
+    LaunchedEffect(currentStepIndex, isTtsInitialized, contentItems) {
+        if (isTtsInitialized && tts != null && contentItems.isNotEmpty()) {
+            if (!autoPlayedSteps.contains(currentStepIndex)) {
+                val textToSpeak = contentItems[currentStepIndex].content
+                tts?.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, null)
+                autoPlayedSteps = autoPlayedSteps + currentStepIndex
+            }
         }
     }
 
@@ -275,24 +290,32 @@ fun FirstAidDetailsPage(
                     modifier = Modifier.padding(horizontal = 24.dp)
                 )
 
-                // Illustration
-                Spacer(modifier = Modifier.height(24.dp))
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    if (!currentContent.imageUrl.isNullOrBlank()) {
+                // Illustration - only show if image URL exists
+                val imageUrl = currentContent.imageUrl
+                Log.d("FirstAidDetails", "Rendering step ${currentStepIndex + 1} - imageUrl: '$imageUrl', isNullOrBlank: ${imageUrl.isNullOrBlank()}")
+                
+                if (!imageUrl.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        // Use ImageRequest.Builder for proper handling of content URIs and HTTP URLs
+                        val imageRequest = ImageRequest.Builder(context)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build()
+                        
                         AsyncImage(
-                            model = currentContent.imageUrl,
+                            model = imageRequest,
                             contentDescription = "Step illustration",
                             modifier = Modifier
                                 .width(266.dp)
                                 .height(236.dp),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .width(266.dp)
-                                .height(236.dp)
-                                .background(Color(0xFFEFEFEF), RoundedCornerShape(8.dp))
+                            contentScale = ContentScale.Crop,
+                            onError = { error ->
+                                Log.e("FirstAidDetails", "Error loading image from '$imageUrl': ${error.result.throwable.message}")
+                            },
+                            onSuccess = {
+                                Log.d("FirstAidDetails", "Image loaded successfully from: $imageUrl")
+                            }
                         )
                     }
                 }

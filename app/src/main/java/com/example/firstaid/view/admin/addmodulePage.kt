@@ -25,12 +25,17 @@ import androidx.compose.ui.unit.sp
 import com.example.firstaid.R
 import com.example.firstaid.view.components.TopBarWithBack
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.imePadding
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import coil.compose.AsyncImage
+import android.util.Log
+import java.util.UUID
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.IconButton
 
 private data class ModuleTopicItem(val id: String, val title: String)
 
@@ -48,14 +53,87 @@ private fun createContentEntries(
     onComplete: (Boolean) -> Unit
 ) {
     val db = FirebaseFirestore.getInstance()
+    val storage = FirebaseStorage.getInstance()
     var completedCount = 0
     val totalSteps = steps.size
     var hasError = false
+    var uploadsCompleted = 0
+    val imageUrls = mutableMapOf<Int, String?>()
     
     if (totalSteps == 0) {
         onComplete(true)
         return
     }
+    
+    // First, upload all images to Firebase Storage
+    val stepsWithImages = steps.mapIndexedNotNull { index, step ->
+        if (step.imageUri != null) {
+            Pair(index, step.imageUri!!)
+        } else {
+            imageUrls[index] = null // Mark as no image
+            null
+        }
+    }
+    
+    if (stepsWithImages.isEmpty()) {
+        // No images to upload, proceed directly to create content entries
+        createContentEntriesWithUrls(learningId, steps, imageUrls, db, onComplete)
+        return
+    }
+    
+    // Upload images to Firebase Storage
+    stepsWithImages.forEach { (index, uri) ->
+        val fileName = "content_${learningId}_step${index + 1}_${UUID.randomUUID()}.jpg"
+        val storageRef = storage.reference.child("content_images/$fileName")
+        
+        Log.d("AddModule", "Uploading image for step ${index + 1} to: $fileName")
+        
+        storageRef.putFile(uri)
+            .addOnSuccessListener { taskSnapshot ->
+                taskSnapshot.storage.downloadUrl.addOnSuccessListener { downloadUri ->
+                    val imageUrl = downloadUri.toString()
+                    imageUrls[index] = imageUrl
+                    uploadsCompleted++
+                    Log.d("AddModule", "Image uploaded successfully for step ${index + 1}: $imageUrl")
+                    
+                    // Check if all uploads are complete
+                    if (uploadsCompleted == stepsWithImages.size) {
+                        // All images uploaded, now create content entries
+                        createContentEntriesWithUrls(learningId, steps, imageUrls, db, onComplete)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("AddModule", "Failed to get download URL for step ${index + 1}: ${e.message}")
+                    hasError = true
+                    imageUrls[index] = null // Continue without image
+                    uploadsCompleted++
+                    if (uploadsCompleted == stepsWithImages.size) {
+                        createContentEntriesWithUrls(learningId, steps, imageUrls, db, onComplete)
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("AddModule", "Failed to upload image for step ${index + 1}: ${e.message}")
+                hasError = true
+                imageUrls[index] = null // Continue without image
+                uploadsCompleted++
+                if (uploadsCompleted == stepsWithImages.size) {
+                    createContentEntriesWithUrls(learningId, steps, imageUrls, db, onComplete)
+                }
+            }
+    }
+}
+
+private fun createContentEntriesWithUrls(
+    learningId: String,
+    steps: List<StepData>,
+    imageUrls: Map<Int, String?>,
+    db: FirebaseFirestore,
+    onComplete: (Boolean) -> Unit
+) {
+    var completedCount = 0
+    val totalSteps = steps.size
+    var hasError = false
     
     steps.forEachIndexed { index, step ->
         val contentDocRef = db.collection("Content").document()
@@ -66,17 +144,19 @@ private fun createContentEntries(
             "content" to step.content.text.trim(),
             "description" to step.description.text.trim(),
             "stepNumber" to (index + 1),
-            "imageUrl" to step.imageUri?.toString() // Store image URI as string for now
+            "imageUrl" to imageUrls[index] // Store Firebase Storage download URL
         )
         
         contentDocRef.set(contentData)
             .addOnSuccessListener {
                 completedCount++
+                Log.d("AddModule", "Content entry ${index + 1} created successfully")
                 if (completedCount == totalSteps && !hasError) {
                     onComplete(true)
                 }
             }
             .addOnFailureListener { e ->
+                Log.e("AddModule", "Failed to create content entry ${index + 1}: ${e.message}")
                 hasError = true
                 onComplete(false)
             }
@@ -96,6 +176,7 @@ fun AddModulePage(
     var expanded by remember { mutableStateOf(false) }
     var selectedTopic by remember { mutableStateOf<ModuleTopicItem?>(null) }
     var noTopicsAvailable by remember { mutableStateOf(false) }
+    var moduleDescription by remember { mutableStateOf(TextFieldValue("")) }
 
     var isSaving by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
@@ -241,10 +322,43 @@ fun AddModulePage(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    if (selectedTopic != null) {
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    // Dynamic steps rendering
-                    steps.forEachIndexed { index, step ->
+                        // Module Description
+                        Text(
+                            text = "Module Description",
+                            fontSize = 16.sp,
+                            color = if (noTopicsAvailable) Color.Gray else Color.Black,
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = moduleDescription,
+                            onValueChange = { newValue ->
+                                if (!noTopicsAvailable) {
+                                    moduleDescription = newValue
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
+                            placeholder = { Text("Enter module description", color = Color(0xFFAAAAAA)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Steps
+                        steps.forEachIndexed { index, step ->
                         if (index > 0) {
                             Spacer(modifier = Modifier.height(24.dp))
                             Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
@@ -384,47 +498,71 @@ fun AddModulePage(
                                 .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
                                 .clickable { 
                                     imageLauncher.launch("image/*")
-                                },
-                            contentAlignment = Alignment.Center
+                                }
                         ) {
                             if (step.imageUri != null) {
-                                AsyncImage(model = step.imageUri, contentDescription = null)
+                                AsyncImage(model = step.imageUri, contentDescription = null, modifier = Modifier.matchParentSize())
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .align(Alignment.TopEnd)
+                                        .padding(2.dp)
+                                        .clickable {
+                                            steps = steps.map { current ->
+                                                if (current.id == step.id) current.copy(imageUri = null) else current
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Remove image",
+                                        tint = Color.Red,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             } else {
-                                Text(text = "+", color = Color(0xFF757575), fontSize = 24.sp)
+                                Box(modifier = Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
+                                    Text(text = "+", color = Color(0xFF757575), fontSize = 24.sp)
+                                }
                             }
                         }
-                    }
+                        }
 
-                    // Add Step button
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = {
-                            if (!noTopicsAvailable) {
-                                steps = steps + StepData(
-                                    id = nextStepId,
-                                    title = TextFieldValue(""),
-                                    content = TextFieldValue(""),
-                                    description = TextFieldValue(""),
-                                    imageUri = null
-                                )
-                                nextStepId++
-                            }
-                        },
-                        enabled = !noTopicsAvailable,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
-                            disabledContainerColor = Color(0xFFF5F5F5),
-                            disabledContentColor = Color.Gray
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(text = "Add Step", color = colorResource(id = R.color.green_primary))
-                    }
+                        // Add Step
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                    Spacer(modifier = Modifier.height(120.dp))
+                        Button(
+                            onClick = {
+                                if (!noTopicsAvailable) {
+                                    steps = steps + StepData(
+                                        id = nextStepId,
+                                        title = TextFieldValue(""),
+                                        content = TextFieldValue(""),
+                                        description = TextFieldValue(""),
+                                        imageUri = null
+                                    )
+                                    nextStepId++
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledContentColor = Color.Gray
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(text = "Add Step", color = colorResource(id = R.color.green_primary))
+                        }
+
+                        Spacer(modifier = Modifier.height(120.dp))
+                    }
                 }
             }
         }
@@ -445,28 +583,67 @@ fun AddModulePage(
                     val topic = selectedTopic
                     val firstStep = steps.firstOrNull()
                     if (!isSaving && topic != null && firstStep != null && 
-                        firstStep.title.text.isNotBlank() && firstStep.content.text.isNotBlank()) {
+                        firstStep.title.text.isNotBlank() && firstStep.content.text.isNotBlank() &&
+                        moduleDescription.text.isNotBlank()) {
                         isSaving = true
                         val docRef = db.collection("Learning").document()
                         val learningId = docRef.id
                         val data = hashMapOf(
                             "learningId" to learningId,
                             "firstAidId" to topic.id,
-                            "title" to firstStep.title.text.trim(),
-                            "content" to firstStep.content.text.trim(),
-                            "description" to firstStep.description.text.trim()
+                            "description" to moduleDescription.text.trim()
                         )
                         docRef.set(data)
                             .addOnSuccessListener {
                                 // Create Content entries for each step
                                 createContentEntries(learningId, steps) { success ->
                                     if (success) {
-                                        showSuccess = true
-                                        scope.launch {
-                                            kotlinx.coroutines.delay(1000)
-                                            showSuccess = false
-                                            onBackClick()
-                                        }
+                                        // Create Learning_Progress for all existing users
+                                        db.collection("User").get()
+                                            .addOnSuccessListener { userDocs ->
+                                                val batch = db.batch()
+                                                userDocs.documents.forEach { userDoc ->
+                                                    val userId = userDoc.getString("userId") ?: userDoc.id
+                                                    val progressData = hashMapOf(
+                                                        "userId" to userId,
+                                                        "learningId" to learningId,
+                                                        "status" to "Pending"
+                                                    )
+                                                    val progressRef = db.collection("Learning_Progress").document()
+                                                    batch.set(progressRef, progressData)
+                                                }
+                                                
+                                                batch.commit()
+                                                    .addOnSuccessListener {
+                                                        Log.d("AddModule", "Created learning progress for all users")
+                                                        showSuccess = true
+                                                        scope.launch {
+                                                            kotlinx.coroutines.delay(1000)
+                                                            showSuccess = false
+                                                            onBackClick()
+                                                        }
+                                                    }
+                                                    .addOnFailureListener { e ->
+                                                        Log.e("AddModule", "Failed to create learning progress: ${e.message}")
+                                                        // Still show success as module was created
+                                                        showSuccess = true
+                                                        scope.launch {
+                                                            kotlinx.coroutines.delay(1000)
+                                                            showSuccess = false
+                                                            onBackClick()
+                                                        }
+                                                    }
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("AddModule", "Failed to load users: ${e.message}")
+                                                // Still show success as module was created
+                                                showSuccess = true
+                                                scope.launch {
+                                                    kotlinx.coroutines.delay(1000)
+                                                    showSuccess = false
+                                                    onBackClick()
+                                                }
+                                            }
                                     } else {
                                         isSaving = false
                                     }
@@ -478,6 +655,7 @@ fun AddModulePage(
                     }
                 },
                 enabled = !isSaving && selectedTopic != null && !noTopicsAvailable &&
+                    moduleDescription.text.isNotBlank() &&
                     steps.all { step -> 
                         step.title.text.isNotBlank() && 
                         step.content.text.isNotBlank() && 

@@ -28,6 +28,10 @@ import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBarWithBack
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.layout.ContentScale
+import android.util.Log
 
 private data class LearningContent(
     val id: String,
@@ -36,7 +40,8 @@ private data class LearningContent(
     val title: String,
     val content: String,
     val description: String? = null,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val stepNumber: Int = 1
 )
 
 @Composable
@@ -104,9 +109,10 @@ fun LearnDetailsPage(
                                         title = doc.getString("title") ?: "",
                                         content = doc.getString("content") ?: "",
                                         description = doc.getString("description"),
-                                        imageUrl = doc.getString("imageUrl")
+                                        imageUrl = doc.getString("imageUrl"),
+                                        stepNumber = (doc.getLong("stepNumber")?.toInt()) ?: 1
                                     )
-                                }.sortedBy { it.title }
+                                }.sortedBy { it.stepNumber }
 
                                 learningContent = contents
                                 
@@ -197,6 +203,7 @@ fun LearnDetailsPage(
                         LearningContentCard(
                             content = content,
                             index = index + 1,
+                            context = context,
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                         )
                     }
@@ -345,6 +352,7 @@ fun LearnDetailsPage(
 private fun LearningContentCard(
     content: LearningContent,
     index: Int,
+    context: android.content.Context,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -397,23 +405,31 @@ private fun LearningContentCard(
                 )
             }
 
-            // Image placeholder if available
-            content.imageUrl?.let { imageUrl ->
-                Spacer(modifier = Modifier.height(12.dp))
+            // Image if available - display as complete image like firstaiddetailsPage
+            if (!content.imageUrl.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(24.dp))
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .background(
-                            Color(0xFFEFEFEF),
-                            RoundedCornerShape(8.dp)
-                        ),
+                    modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "Image: $imageUrl",
-                        color = Color.Gray,
-                        fontSize = 14.sp
+                    val imageRequest = ImageRequest.Builder(context)
+                        .data(content.imageUrl)
+                        .crossfade(true)
+                        .build()
+                    
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = "Step illustration",
+                        modifier = Modifier
+                            .width(266.dp)
+                            .height(236.dp),
+                        contentScale = ContentScale.Crop,
+                        onError = { error ->
+                            Log.e("LearnDetails", "Error loading image from '${content.imageUrl}': ${error.result.throwable.message}")
+                        },
+                        onSuccess = {
+                            Log.d("LearnDetails", "Image loaded successfully from: ${content.imageUrl}")
+                        }
                     )
                 }
             }

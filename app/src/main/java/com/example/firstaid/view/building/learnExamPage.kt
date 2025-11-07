@@ -292,20 +292,23 @@ fun LearnExamPage(
         refreshTrigger++
     }
     
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // Top Bar
-        TopBar()
-        
-        // Main Content
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Top Bar
+            TopBar()
+            
+            // Main Content
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+            ) {
             Spacer(modifier = Modifier.height(29.dp))
 
             Row(
@@ -416,13 +419,22 @@ fun LearnExamPage(
                         )
                     }
                 } else if (selectedTab == "Learn") {
+                    // Sort learnTopics by title to ensure alphabetical order (case-insensitive)
+                    val sortedLearnTopics = remember(learnTopics, firstAidTitles) {
+                        learnTopics.sortedBy { learning ->
+                            val firstAidId = learning["firstAidId"] as? String ?: ""
+                            val title = firstAidTitles[firstAidId] ?: firstAidId
+                            title.lowercase() // Case-insensitive sorting
+                        }
+                    }
+                    
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(bottom = 20.dp)
                     ) {
-                        items(learnTopics) { learning ->
+                        items(sortedLearnTopics) { learning ->
                             val firstAidId = learning["firstAidId"] as? String ?: ""
                             val learningId = learning["learningId"] as? String ?: ""
                             val title = firstAidTitles[firstAidId] ?: firstAidId
@@ -438,13 +450,33 @@ fun LearnExamPage(
                         }
                     }
                 } else {
+                    // Sort examTopics by title to ensure alphabetical order (case-insensitive)
+                    val sortedExamTopics = remember(examTopics, firstAidTitles) {
+                        examTopics.sortedBy { exam ->
+                            val firstAidId = exam["firstAidId"] as? String ?: ""
+                            val title = firstAidTitles[firstAidId] ?: firstAidId
+                            title.lowercase() // Case-insensitive sorting
+                        }
+                    }
+                    
+                    // Filter exams to only show those with learning modules
+                    val examsWithLearning = remember(sortedExamTopics, learnTopics) {
+                        sortedExamTopics.filter { exam ->
+                            val firstAidId = exam["firstAidId"] as? String ?: ""
+                            val matchingLearning = learnTopics.find { learning ->
+                                (learning["firstAidId"] as? String) == firstAidId
+                            }
+                            matchingLearning != null
+                        }
+                    }
+                    
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(bottom = 80.dp) // Reduced bottom padding
                     ) {
-                        items(examTopics) { exam ->
+                        items(examsWithLearning) { exam ->
                             val firstAidId = exam["firstAidId"] as? String ?: ""
                             val examId = exam["examId"] as? String ?: ""
                             val title = firstAidTitles[firstAidId] ?: firstAidId
@@ -487,14 +519,15 @@ fun LearnExamPage(
                     }
                 }
             }
+            
+            // Bottom Bar
+            BottomBar(
+                selected = BottomItem.LEARN,
+                onSelected = onSelectBottom
+            )
+        }
         
-        // Bottom Bar
-        BottomBar(
-            selected = BottomItem.LEARN,
-            onSelected = onSelectBottom
-        )
-        
-        // Unavailable exam message dialog
+        // Unavailable exam message dialog - positioned absolutely at top level
         if (showUnavailableMessage) {
             Box(
                 modifier = Modifier

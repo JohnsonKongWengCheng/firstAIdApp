@@ -400,9 +400,11 @@ fun MyProfilePage(
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = colorResource(id = R.color.green_primary),
-                        unfocusedBorderColor = Color.Gray
+                        unfocusedBorderColor = Color.Gray,
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black
                     ),
-                    textStyle = TextStyle(fontFamily = cabin),
+                    textStyle = TextStyle(fontFamily = cabin, color = Color.Black),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
                         onDone = { keyboardController?.hide() }

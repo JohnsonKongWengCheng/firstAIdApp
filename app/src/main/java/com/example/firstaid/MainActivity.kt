@@ -208,6 +208,9 @@ class MainActivity : ComponentActivity() {
                                             navController.navigate("gate/account")
                                         }
                                     }
+                                },
+                                onNavigateToFirstAid = { firstAidId ->
+                                    navController.navigate("firstaiddetails/$firstAidId")
                                 }
                             )
                         }

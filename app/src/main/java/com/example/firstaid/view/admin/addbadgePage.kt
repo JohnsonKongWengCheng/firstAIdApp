@@ -204,65 +204,67 @@ fun AddBadgePage(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                if (selectedTopic != null) {
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                // Badge Name
-                Text(
-                    text = "Badge Name:",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (noTopicsAvailable) Color.Gray else Color.Black,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                    // Badge Name
+                    Text(
+                        text = "Badge Name:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (noTopicsAvailable) Color.Gray else Color.Black,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
 
-                OutlinedTextField(
-                    value = badgeName,
-                    onValueChange = { if (!noTopicsAvailable) badgeName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Enter Badge Name..") },
-                    enabled = !noTopicsAvailable,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
-                        unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledContainerColor = Color(0xFFF5F5F5),
-                        disabledTextColor = Color.Gray
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
+                    OutlinedTextField(
+                        value = badgeName,
+                        onValueChange = { if (!noTopicsAvailable) badgeName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Enter Badge Name..") },
+                        enabled = !noTopicsAvailable,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
+                            unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledTextColor = Color.LightGray
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                // Description
-                Text(
-                    text = "Description:",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (noTopicsAvailable) Color.Gray else Color.Black,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                    // Description
+                    Text(
+                        text = "Description:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (noTopicsAvailable) Color.Gray else Color.Black,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { if (!noTopicsAvailable) description = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Enter the description here..") },
-                    enabled = !noTopicsAvailable,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
-                        unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledContainerColor = Color(0xFFF5F5F5),
-                        disabledTextColor = Color.Gray
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
-                
-                Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { if (!noTopicsAvailable) description = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Enter the description here..") },
+                        enabled = !noTopicsAvailable,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
+                            unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECECEC),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledTextColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                    
+                    Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
+                }
             }
         }
 
@@ -298,13 +300,153 @@ fun AddBadgePage(
                             .document(badgeId)
                             .set(badgeData)
                             .addOnSuccessListener {
-                                loading = false
-                                showSuccessDialog = true
-                                scope.launch {
-                                    kotlinx.coroutines.delay(1000)
-                                    showSuccessDialog = false
-                                    onBackClick()
-                                }
+                                // After creating the badge, award it to users who already passed the exam(s) for this topic
+                                val faId = selectedTopic!!.firstAidId
+                                firestore.collection("Exam")
+                                    .whereEqualTo("firstAidId", faId)
+                                    .get()
+                                    .addOnSuccessListener { examSnapshot ->
+                                        val examIds = examSnapshot.documents.mapNotNull { it.getString("examId") ?: it.id }
+                                        if (examIds.isEmpty()) {
+                                            loading = false
+                                            showSuccessDialog = true
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(1000)
+                                                showSuccessDialog = false
+                                                onBackClick()
+                                            }
+                                        } else {
+                                            // For each exam, find users who passed and award badge if not already awarded
+                                            var processed = 0
+                                            var anyFailure = false
+                                            examIds.forEach { examId ->
+                                                firestore.collection("Exam_Progress")
+                                                    .whereEqualTo("examId", examId)
+                                                    .whereEqualTo("status", "Passed")
+                                                    .get()
+                                                    .addOnSuccessListener { passedSnapshot ->
+                                                        val userIds = passedSnapshot.documents.mapNotNull { it.getString("userId") }
+                                                        if (userIds.isEmpty()) {
+                                                            processed++
+                                                            if (processed == examIds.size) {
+                                                                loading = false
+                                                                showSuccessDialog = true
+                                                                scope.launch {
+                                                                    kotlinx.coroutines.delay(1000)
+                                                                    showSuccessDialog = false
+                                                                    onBackClick()
+                                                                }
+                                                            }
+                                                        } else {
+                                                            var awardedProcessed = 0
+                                                            if (userIds.isEmpty()) awardedProcessed = 0
+                                                            userIds.forEach { uid ->
+                                                                // Check if already awarded
+                                                                firestore.collection("User_Badge")
+                                                                    .whereEqualTo("userId", uid)
+                                                                    .whereEqualTo("badgeId", badgeId)
+                                                                    .get()
+                                                                    .addOnSuccessListener { existing ->
+                                                                        if (existing.isEmpty) {
+                                                                            val userBadgeData = hashMapOf(
+                                                                                "userId" to uid,
+                                                                                "badgeId" to badgeId,
+                                                                                "earnedDate" to com.google.firebase.Timestamp.now(),
+                                                                                "examId" to examId,
+                                                                                "firstAidId" to faId
+                                                                            )
+                                                                            firestore.collection("User_Badge").add(userBadgeData)
+                                                                                .addOnSuccessListener { 
+                                                                                    awardedProcessed++
+                                                                                    if (awardedProcessed == userIds.size) {
+                                                                                        processed++
+                                                                                        if (processed == examIds.size) {
+                                                                                            loading = false
+                                                                                            showSuccessDialog = true
+                                                                                            scope.launch {
+                                                                                                kotlinx.coroutines.delay(1000)
+                                                                                                showSuccessDialog = false
+                                                                                                onBackClick()
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                                .addOnFailureListener { 
+                                                                                    anyFailure = true
+                                                                                    awardedProcessed++
+                                                                                    if (awardedProcessed == userIds.size) {
+                                                                                        processed++
+                                                                                        if (processed == examIds.size) {
+                                                                                            loading = false
+                                                                                            showSuccessDialog = true
+                                                                                            scope.launch {
+                                                                                                kotlinx.coroutines.delay(1000)
+                                                                                                showSuccessDialog = false
+                                                                                                onBackClick()
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                        } else {
+                                                                            awardedProcessed++
+                                                                            if (awardedProcessed == userIds.size) {
+                                                                                processed++
+                                                                                if (processed == examIds.size) {
+                                                                                    loading = false
+                                                                                    showSuccessDialog = true
+                                                                                    scope.launch {
+                                                                                        kotlinx.coroutines.delay(1000)
+                                                                                        showSuccessDialog = false
+                                                                                        onBackClick()
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    .addOnFailureListener {
+                                                                        anyFailure = true
+                                                                        awardedProcessed++
+                                                                        if (awardedProcessed == userIds.size) {
+                                                                            processed++
+                                                                            if (processed == examIds.size) {
+                                                                                loading = false
+                                                                                showSuccessDialog = true
+                                                                                scope.launch {
+                                                                                    kotlinx.coroutines.delay(1000)
+                                                                                    showSuccessDialog = false
+                                                                                    onBackClick()
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                            }
+                                                        }
+                                                    }
+                                                    .addOnFailureListener {
+                                                        anyFailure = true
+                                                        processed++
+                                                        if (processed == examIds.size) {
+                                                            loading = false
+                                                            showSuccessDialog = true
+                                                            scope.launch {
+                                                                kotlinx.coroutines.delay(1000)
+                                                                showSuccessDialog = false
+                                                                onBackClick()
+                                                            }
+                                                        }
+                                                    }
+                                            }
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        loading = false
+                                        showSuccessDialog = true
+                                        scope.launch {
+                                            kotlinx.coroutines.delay(1000)
+                                            showSuccessDialog = false
+                                            onBackClick()
+                                        }
+                                    }
                             }
                             .addOnFailureListener {
                                 loading = false

@@ -163,41 +163,43 @@ fun EditTopicPage(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    if (selectedTopic != null) {
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    Text(
-                        text = "New First Aid Topic Title",
-                        fontSize = 16.sp,
-                        color = Color.Black,
-                        fontFamily = cabin
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = newTitle,
-                        onValueChange = { newTitle = it },
-                        placeholder = { Text("Enter First Aid Topic Title here..", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else Color.Transparent,
-                            focusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = Color(0xFFECF0EC),
-                            focusedContainerColor = Color(0xFFE6F3E6)
-                        ),
-                        isError = isFormatInvalid || isSameTitle
-                    )
-                    
-                    // Error message display
-                    if (validationError.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = validationError,
-                            color = Color.Red,
-                            fontSize = 12.sp,
+                            text = "New First Aid Topic Title",
+                            fontSize = 16.sp,
+                            color = Color.Black,
                             fontFamily = cabin
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = newTitle,
+                            onValueChange = { newTitle = it },
+                            placeholder = { Text("Enter First Aid Topic Title here..", color = Color(0xFFAAAAAA)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else Color.Transparent,
+                                focusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedContainerColor = Color(0xFFECF0EC),
+                                focusedContainerColor = Color(0xFFE6F3E6)
+                            ),
+                            isError = isFormatInvalid || isSameTitle
+                        )
+                        
+                        // Error message display
+                        if (validationError.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = validationError,
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                fontFamily = cabin
+                            )
+                        }
                     }
                 }
             }

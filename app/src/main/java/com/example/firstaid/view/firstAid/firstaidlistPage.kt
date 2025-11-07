@@ -108,7 +108,7 @@ fun FirstAidListPage(
                                     }
                                     
                                     val docs = snapshot?.documents ?: emptyList()
-                                    items.clear()
+                                    val tempItems = mutableListOf<FirstAid>()
                                     for (doc in docs) {
                                         val title = (doc.get("title") as? String)?.trim().orEmpty()
                                         val firstAidId = (doc.get("firstAidId") as? String)?.trim().orEmpty()
@@ -119,9 +119,12 @@ fun FirstAidListPage(
                                         // Only add topics that have both learning modules and content
                                         if (topicsWithContent.contains(resolvedId)) {
                                             println("DEBUG: FirstAidListPage - doc.id: '${doc.id}', firstAidId: '$firstAidId', title: '$resolvedTitle', resolvedId: '$resolvedId'")
-                                            items.add(FirstAid(id = resolvedId, title = resolvedTitle))
+                                            tempItems.add(FirstAid(id = resolvedId, title = resolvedTitle))
                                         }
                                     }
+                                    // Sort items alphabetically by title
+                                    items.clear()
+                                    items.addAll(tempItems.sortedBy { it.title })
                                     errorMessage = null
                                     isLoading = false
                                 }

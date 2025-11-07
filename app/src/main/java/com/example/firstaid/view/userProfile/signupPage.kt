@@ -408,25 +408,28 @@ fun SignUpPage(
                                 firestore.collection("User").add(userData)
                                     .addOnSuccessListener { userDocRef ->
                                         // Create both learning and exam progress records
-                                        val batch = firestore.batch()
-                                        
-                                        // Create learning progress records for all learning materials
+                                        // First get all learning materials and exams
                                         firestore.collection("Learning").get()
                                             .addOnSuccessListener { learningDocs ->
-                                                learningDocs.documents.forEach { learningDoc ->
-                                                    val learningId = learningDoc.getString("learningId") ?: learningDoc.id
-                                                    val progressData = hashMapOf(
-                                                        "userId" to uid,
-                                                        "learningId" to learningId,
-                                                        "status" to "Pending"
-                                                    )
-                                                    val progressRef = firestore.collection("Learning_Progress").document()
-                                                    batch.set(progressRef, progressData)
-                                                }
-                                                
-                                                // Create exam progress records for all exams
+                                                // Then get all exams
                                                 firestore.collection("Exam").get()
                                                     .addOnSuccessListener { examDocs ->
+                                                        // Create batch after both queries complete
+                                                        val batch = firestore.batch()
+                                                        
+                                                        // Create learning progress records for all learning materials
+                                                        learningDocs.documents.forEach { learningDoc ->
+                                                            val learningId = learningDoc.getString("learningId") ?: learningDoc.id
+                                                            val progressData = hashMapOf(
+                                                                "userId" to uid,
+                                                                "learningId" to learningId,
+                                                                "status" to "Pending"
+                                                            )
+                                                            val progressRef = firestore.collection("Learning_Progress").document()
+                                                            batch.set(progressRef, progressData)
+                                                        }
+                                                        
+                                                        // Create exam progress records for all exams
                                                         examDocs.documents.forEach { examDoc ->
                                                             val examId = examDoc.getString("examId") ?: examDoc.id
                                                             val examProgressData = hashMapOf(

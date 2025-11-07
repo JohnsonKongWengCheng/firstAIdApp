@@ -25,17 +25,98 @@ import androidx.compose.ui.unit.sp
 import com.example.firstaid.R
 import com.example.firstaid.view.components.TopBarWithBack
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.imePadding
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
+import android.util.Log
+import java.util.UUID
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.IconButton
 
 private data class TopicRef(val id: String, val title: String)
 private data class ModuleRef(val id: String, val title: String)
+
+private fun uploadStepImages(
+    learningId: String,
+    steps: List<EditableStep>,
+    onComplete: (Map<Int, String?>) -> Unit
+) {
+    val storage = FirebaseStorage.getInstance()
+    val imageUrls = mutableMapOf<Int, String?>()
+    var uploadsCompleted = 0
+    
+    // Find steps with new images to upload
+    val stepsToUpload = steps.mapIndexedNotNull { index, step ->
+        if (step.imageUri != null) {
+            Pair(index, step.imageUri!!)
+        } else {
+            imageUrls[index] = step.imageUrl // Keep existing URL
+            null
+        }
+    }
+    
+    if (stepsToUpload.isEmpty()) {
+        // No images to upload, return existing URLs
+        onComplete(imageUrls)
+        return
+    }
+    
+    // Upload new images to Firebase Storage
+    stepsToUpload.forEach { (index, uri) ->
+        val fileName = "content_${learningId}_step${index + 1}_${UUID.randomUUID()}.jpg"
+        val storageRef = storage.reference.child("content_images/$fileName")
+        
+        Log.d("EditModule", "Uploading image for step ${index + 1} to: $fileName")
+        
+        storageRef.putFile(uri)
+            .addOnSuccessListener { taskSnapshot ->
+                taskSnapshot.storage.downloadUrl.addOnSuccessListener { downloadUri ->
+                    val imageUrl = downloadUri.toString()
+                    imageUrls[index] = imageUrl
+                    uploadsCompleted++
+                    Log.d("EditModule", "Image uploaded successfully for step ${index + 1}: $imageUrl")
+                    
+                    // Check if all uploads are complete
+                    if (uploadsCompleted == stepsToUpload.size) {
+                        onComplete(imageUrls)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("EditModule", "Failed to get download URL for step ${index + 1}: ${e.message}")
+                    // Continue without image if upload fails
+                    imageUrls[index] = steps[index].imageUrl // Keep existing
+                    uploadsCompleted++
+                    if (uploadsCompleted == stepsToUpload.size) {
+                        onComplete(imageUrls)
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("EditModule", "Failed to upload image for step ${index + 1}: ${e.message}")
+                // Continue without image if upload fails
+                imageUrls[index] = steps[index].imageUrl // Keep existing
+                uploadsCompleted++
+                if (uploadsCompleted == stepsToUpload.size) {
+                    onComplete(imageUrls)
+                }
+            }
+    }
+}
+
 private data class EditableStep(
     val id: String?,
     var title: TextFieldValue,
     var content: TextFieldValue,
     var description: TextFieldValue,
-    var stepNumber: Int
+    var stepNumber: Int,
+    var imageUrl: String? = null, // Current image URL from Firestore
+    var imageUri: Uri? = null // New image URI to upload
 )
 
 @Composable
@@ -45,6 +126,7 @@ fun EditModulePage(
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val db = remember { FirebaseFirestore.getInstance() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // Dropdown data
     var topics by remember { mutableStateOf<List<TopicRef>>(emptyList()) }
@@ -53,6 +135,7 @@ fun EditModulePage(
     var selectedModule by remember { mutableStateOf<ModuleRef?>(null) }
     var topicExpanded by remember { mutableStateOf(false) }
     var noTopicsAvailable by remember { mutableStateOf(false) }
+    var moduleDescription by remember { mutableStateOf(TextFieldValue("")) }
 
     // Steps
     var steps by remember { mutableStateOf<List<EditableStep>>(emptyList()) }
@@ -108,11 +191,15 @@ fun EditModulePage(
     LaunchedEffect(selectedTopic) {
         selectedModule = null
         steps = emptyList()
+        moduleDescription = TextFieldValue("")
         if (selectedTopic != null) {
             db.collection("Learning").whereEqualTo("firstAidId", selectedTopic!!.id).get()
                 .addOnSuccessListener { qs ->
                     modules = qs.documents.map { d ->
-                        ModuleRef(id = d.getString("learningId") ?: d.id, title = d.getString("title") ?: d.id)
+                        // Learning only contains: learningId, firstAidId, description
+                        val learningId = d.getString("learningId") ?: d.id
+                        val description = d.getString("description") ?: learningId
+                        ModuleRef(id = learningId, title = description)
                     }.sortedBy { it.title }
                     // Auto-select the only module (or the first one)
                     selectedModule = modules.firstOrNull()
@@ -120,11 +207,24 @@ fun EditModulePage(
         }
     }
 
-    // Load steps when module selected
+    // Load steps and description when module selected
     LaunchedEffect(selectedModule) {
         steps = emptyList()
         originalSteps = emptyList()
+        moduleDescription = TextFieldValue("")
         val mod = selectedModule ?: return@LaunchedEffect
+        
+        // Load Learning document to get description
+        db.collection("Learning").whereEqualTo("learningId", mod.id).get()
+            .addOnSuccessListener { learningDocs ->
+                if (learningDocs.documents.isNotEmpty()) {
+                    val learningDoc = learningDocs.documents.first()
+                    val description = learningDoc.getString("description") ?: ""
+                    moduleDescription = TextFieldValue(description)
+                }
+            }
+        
+        // Load Content documents for steps
         db.collection("Content").whereEqualTo("learningId", mod.id).get()
             .addOnSuccessListener { qs ->
                 val list = qs.documents.mapIndexed { index, d ->
@@ -133,7 +233,8 @@ fun EditModulePage(
                         title = TextFieldValue(d.getString("title") ?: ""),
                         content = TextFieldValue(d.getString("content") ?: ""),
                         description = TextFieldValue(d.getString("description") ?: ""),
-                        stepNumber = (d.getLong("stepNumber")?.toInt()) ?: (index + 1)
+                        stepNumber = (d.getLong("stepNumber")?.toInt()) ?: (index + 1),
+                        imageUrl = d.getString("imageUrl") // Load existing image URL
                     )
                 }.sortedBy { it.stepNumber }
                 steps = list.ifEmpty { listOf(EditableStep(null, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), 1)) }
@@ -143,7 +244,7 @@ fun EditModulePage(
 
     fun addEmptyStep() {
         val next = (steps.maxOfOrNull { it.stepNumber } ?: 0) + 1
-        steps = steps + EditableStep(null, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), next)
+        steps = steps + EditableStep(null, TextFieldValue(""), TextFieldValue(""), TextFieldValue(""), next, null)
     }
 
     fun removeStep(stepToRemove: EditableStep) {
@@ -253,27 +354,23 @@ fun EditModulePage(
 
                     // Module (auto-selected): show read-only field
                     if (selectedModule != null) {
-                        Text(text = "Module", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
+                        // Module Description field
+                        Text(text = "Module Description", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp)),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = selectedModule?.title ?: "",
-                                    color = Color.Black,
-                                    fontSize = 16.sp
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
+                        OutlinedTextField(
+                            value = moduleDescription,
+                            onValueChange = { moduleDescription = it },
+                            placeholder = { Text("Enter module description", color = Color(0xFFAAAAAA)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedContainerColor = Color(0xFFECF0EC),
+                                focusedContainerColor = Color(0xFFE6F3E6)
+                            )
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
 
@@ -361,6 +458,84 @@ fun EditModulePage(
                                 )
                             )
 
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(text = "Image:", fontSize = 16.sp, color = Color.Black)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val imageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                                if (uri != null) {
+                                    steps = steps.toMutableList().apply {
+                                        this[index] = this[index].copy(imageUri = uri)
+                                    }
+                                }
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .background(Color(0xFFECF0EC), RoundedCornerShape(10.dp))
+                                    .clickable { 
+                                        imageLauncher.launch("image/*")
+                                    }
+                            ) {
+                                when {
+                                    step.imageUri != null -> {
+                                        // Show newly selected image (content URI)
+                                        val imageRequest = ImageRequest.Builder(context)
+                                            .data(step.imageUri)
+                                            .build()
+                                        AsyncImage(model = imageRequest, contentDescription = null, modifier = Modifier.matchParentSize())
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .align(Alignment.TopEnd)
+                                                .padding(2.dp)
+                                                .clickable {
+                                                    steps = steps.toMutableList().apply {
+                                                        this[index] = this[index].copy(imageUri = null, imageUrl = null)
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Remove image",
+                                                tint = Color.Red,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    !step.imageUrl.isNullOrBlank() -> {
+                                        // Show existing image from Firestore (Firebase Storage URL)
+                                        AsyncImage(model = step.imageUrl, contentDescription = null, modifier = Modifier.matchParentSize())
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .align(Alignment.TopEnd)
+                                                .padding(2.dp)
+                                                .clickable {
+                                                    steps = steps.toMutableList().apply {
+                                                        this[index] = this[index].copy(imageUri = null, imageUrl = null)
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Remove image",
+                                                tint = Color.Red,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    else -> {
+                                        // Show placeholder
+                                        Box(modifier = Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
+                                            Text(text = "+", color = Color(0xFF757575), fontSize = 24.sp)
+                                        }
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(20.dp))
                             Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
                             Spacer(modifier = Modifier.height(20.dp))
@@ -377,8 +552,6 @@ fun EditModulePage(
                             Text(text = "Add Step", color = colorResource(id = R.color.green_primary))
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(120.dp))
                 }
             }
         }
@@ -399,42 +572,70 @@ fun EditModulePage(
                     val module = selectedModule
                     if (!isSaving && module != null) {
                         isSaving = true
-                        val batch = db.batch()
                         
-                        // Delete removed steps
-                        val removedSteps = getRemovedSteps()
-                        removedSteps.forEach { removedStep ->
-                            if (removedStep.id != null) {
-                                batch.delete(db.collection("Content").document(removedStep.id))
-                            }
-                        }
-                        
-                        // Save/update current steps
-                        steps.forEachIndexed { idx, s ->
-                            val docRef = if (s.id != null) db.collection("Content").document(s.id) else db.collection("Content").document()
-                            val data = hashMapOf(
-                                "learningId" to module.id,
-                                "title" to s.title.text.trim(),
-                                "content" to s.content.text.trim(),
-                                "description" to s.description.text.trim(),
-                                "stepNumber" to (idx + 1)
-                            )
-                            batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
-                        }
-                        
-                        batch.commit()
-                            .addOnSuccessListener {
-                                showSuccess = true
-                                scope.launch {
-                                    kotlinx.coroutines.delay(1000)
-                                    showSuccess = false
-                                    onBackClick()
+                        // First, upload new images to Firebase Storage
+                        uploadStepImages(module.id, steps) { imageUrls ->
+                            // After uploads complete, save to Firestore
+                            // First get Learning document reference, then proceed with batch
+                            db.collection("Learning").whereEqualTo("learningId", module.id).limit(1).get()
+                                .addOnSuccessListener { learningDocs ->
+                                    val batch = db.batch()
+                                    
+                                    // Update Learning document with new description
+                                    if (learningDocs.documents.isNotEmpty()) {
+                                        val learningDocRef = learningDocs.documents.first().reference
+                                        batch.update(learningDocRef, "description", moduleDescription.text.trim())
+                                    }
+                                    
+                                    // Delete removed steps
+                                    val removedSteps = getRemovedSteps()
+                                    removedSteps.forEach { removedStep ->
+                                        if (removedStep.id != null) {
+                                            batch.delete(db.collection("Content").document(removedStep.id))
+                                        }
+                                    }
+                                    
+                                    // Save/update current steps
+                                    steps.forEachIndexed { idx, s ->
+                                        val docRef = if (s.id != null) db.collection("Content").document(s.id) else db.collection("Content").document()
+                                        
+                                        // Use new image URL if uploaded, otherwise keep existing
+                                        val finalImageUrl = imageUrls[idx] ?: s.imageUrl
+                                        
+                                        val data = hashMapOf(
+                                            "learningId" to module.id,
+                                            "title" to s.title.text.trim(),
+                                            "content" to s.content.text.trim(),
+                                            "description" to s.description.text.trim(),
+                                            "stepNumber" to (idx + 1),
+                                            "imageUrl" to finalImageUrl
+                                        )
+                                        batch.set(docRef, data, com.google.firebase.firestore.SetOptions.merge())
+                                    }
+                                    
+                                    batch.commit()
+                                        .addOnSuccessListener {
+                                            showSuccess = true
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(1000)
+                                                showSuccess = false
+                                                onBackClick()
+                                            }
+                                        }
+                                        .addOnFailureListener { 
+                                            isSaving = false
+                                            Log.e("EditModule", "Failed to save content: ${it.message}")
+                                        }
                                 }
-                            }
-                            .addOnFailureListener { isSaving = false }
+                                .addOnFailureListener { 
+                                    isSaving = false
+                                    Log.e("EditModule", "Failed to load Learning document: ${it.message}")
+                                }
+                        }
                     }
                 },
-                enabled = !isSaving && selectedModule != null && !noTopicsAvailable && areAllStepsValid(),
+                enabled = !isSaving && selectedModule != null && !noTopicsAvailable && 
+                    moduleDescription.text.isNotBlank() && areAllStepsValid(),
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

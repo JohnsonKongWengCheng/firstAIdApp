@@ -372,13 +372,8 @@ fun ExamDetailsPage(
                                                                 onSubmitClick()
                                                             }
                                                         } else {
-                                                            // Not all correct – show overlay message then navigate back
+                                                            // Not all correct – show overlay message
                                                             showTryAgainMessage = true
-                                                            coroutineScope.launch {
-                                                                kotlinx.coroutines.delay(1000)
-                                                                showTryAgainMessage = false
-                                                                onBackClick()
-                                                            }
                                                         }
                                                     }
                                                     .addOnFailureListener { e ->
@@ -450,46 +445,6 @@ fun ExamDetailsPage(
                                 }
                             }
                         }
-
-                        // Try again overlay message for non-perfect score (styled like success dialog)
-                        if (showTryAgainMessage) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.6f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Card(
-                                    modifier = Modifier
-                                        .padding(24.dp)
-                                        .fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    shape = RoundedCornerShape(16.dp)
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .padding(32.dp)
-                                            .fillMaxWidth(),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Info",
-                                            tint = Color.Red,
-                                            modifier = Modifier.size(48.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Text(
-                                            text = "You didn’t answer all the questions correctly. Please review and try again.",
-                                            color = Color.Red,
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     } else {
                         // Show completion message if already passed
                         Spacer(modifier = Modifier.height(24.dp))
@@ -541,6 +496,66 @@ fun ExamDetailsPage(
             onSelected = onSelectBottom,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
+        
+        // Try again overlay message for non-perfect score - positioned absolutely at top level
+        if (showTryAgainMessage) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(32.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Info",
+                            tint = Color.Red,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "You didn't answer all the questions correctly. Please review and try again.",
+                            color = Color.Red,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            fontFamily = cabin
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = {
+                                showTryAgainMessage = false
+                                onBackClick()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorResource(id = R.color.green_primary)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "OK",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = cabin
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

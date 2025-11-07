@@ -200,33 +200,34 @@ fun AddExamPage(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    if (selectedTopic != null) {
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    // Description
-                    Text(text = "Description:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { if (!noTopicsAvailable) description = it },
-                        enabled = !noTopicsAvailable,
-                        placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                            unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
-                            focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
-                            disabledContainerColor = Color(0xFFF5F5F5),
-                            disabledTextColor = Color.Gray
+                        // Description
+                        Text(text = "Description:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { if (!noTopicsAvailable) description = it },
+                            enabled = !noTopicsAvailable,
+                            placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
+                                focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledTextColor = Color.Gray
+                            )
                         )
-                    )
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    // Dynamic questions rendering
-                    questions.forEachIndexed { index, question ->
+                        // Dynamic questions
+                        questions.forEachIndexed { index, question ->
                         if (index > 0) {
                             Spacer(modifier = Modifier.height(24.dp))
                             Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
@@ -404,39 +405,42 @@ fun AddExamPage(
                                 disabledTextColor = Color.Gray
                             )
                         )
-                    }
+                        }
 
-                    // Add Question button
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = {
-                            if (!noTopicsAvailable) {
-                                questions = questions + QuestionData(
-                                    id = nextQuestionId,
-                                    question = TextFieldValue(""),
-                                    correctAnswer = TextFieldValue(""),
-                                    option1 = TextFieldValue(""),
-                                    option2 = TextFieldValue(""),
-                                    option3 = TextFieldValue("")
-                                )
-                                nextQuestionId++
-                            }
-                        },
-                        enabled = !noTopicsAvailable,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
-                            disabledContainerColor = Color(0xFFF5F5F5),
-                            disabledContentColor = Color.Gray
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(text = "Add Question", color = colorResource(id = R.color.green_primary))
-                    }
+                        // Add Question button
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Divider(color = Color(0xFFB8B8B8), thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = {
+                                if (!noTopicsAvailable) {
+                                    questions = questions + QuestionData(
+                                        id = nextQuestionId,
+                                        question = TextFieldValue(""),
+                                        correctAnswer = TextFieldValue(""),
+                                        option1 = TextFieldValue(""),
+                                        option2 = TextFieldValue(""),
+                                        option3 = TextFieldValue("")
+                                    )
+                                    nextQuestionId++
+                                }
+                            },
+                            enabled = !noTopicsAvailable,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
+                                disabledContainerColor = Color(0xFFF5F5F5),
+                                disabledContentColor = Color.Gray
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(text = "Add Question", color = colorResource(id = R.color.green_primary))
+                        }
 
-                    Spacer(modifier = Modifier.height(120.dp))
+                        Spacer(modifier = Modifier.height(120.dp))
+                    }
                 }
             }
         }
@@ -494,12 +498,54 @@ fun AddExamPage(
                                 
                                 batch.commit()
                                     .addOnSuccessListener {
-                                        showSuccess = true
-                                        scope.launch {
-                                            kotlinx.coroutines.delay(1000)
-                                            showSuccess = false
-                                            onBackClick()
-                                        }
+                                        // Create Exam_Progress for all existing users
+                                        val examId = examRef.id
+                                        db.collection("User").get()
+                                            .addOnSuccessListener { userDocs ->
+                                                val progressBatch = db.batch()
+                                                userDocs.documents.forEach { userDoc ->
+                                                    val userId = userDoc.getString("userId") ?: userDoc.id
+                                                    val examProgressData = hashMapOf(
+                                                        "userId" to userId,
+                                                        "examId" to examId,
+                                                        "status" to "Pending",
+                                                        "score" to 0
+                                                    )
+                                                    val examProgressRef = db.collection("Exam_Progress").document()
+                                                    progressBatch.set(examProgressRef, examProgressData)
+                                                }
+                                                
+                                                progressBatch.commit()
+                                                    .addOnSuccessListener {
+                                                        android.util.Log.d("AddExam", "Created exam progress for all users")
+                                                        showSuccess = true
+                                                        scope.launch {
+                                                            kotlinx.coroutines.delay(1000)
+                                                            showSuccess = false
+                                                            onBackClick()
+                                                        }
+                                                    }
+                                                    .addOnFailureListener { e ->
+                                                        android.util.Log.e("AddExam", "Failed to create exam progress: ${e.message}")
+                                                        // Still show success as exam was created
+                                                        showSuccess = true
+                                                        scope.launch {
+                                                            kotlinx.coroutines.delay(1000)
+                                                            showSuccess = false
+                                                            onBackClick()
+                                                        }
+                                                    }
+                                            }
+                                            .addOnFailureListener { e ->
+                                                android.util.Log.e("AddExam", "Failed to load users: ${e.message}")
+                                                // Still show success as exam was created
+                                                showSuccess = true
+                                                scope.launch {
+                                                    kotlinx.coroutines.delay(1000)
+                                                    showSuccess = false
+                                                    onBackClick()
+                                                }
+                                            }
                                     }
                                     .addOnFailureListener { isSaving = false }
                             }

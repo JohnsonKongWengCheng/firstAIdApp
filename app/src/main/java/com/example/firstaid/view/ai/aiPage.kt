@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,8 +17,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
@@ -40,16 +37,18 @@ import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import com.example.firstaid.service.ApiService
 import android.util.Log
+import androidx.compose.material.icons.filled.Mic
 import org.json.JSONObject
 import org.json.JSONArray
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun AiPage(
-    onSelectBottom: (BottomItem) -> Unit = {}
+    onSelectBottom: (BottomItem) -> Unit = {},
+    onNavigateToFirstAid: (String) -> Unit = {}
 ) {
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val context = LocalContext.current
@@ -58,18 +57,73 @@ fun AiPage(
     
     var scenarioText by remember { mutableStateOf("") }
     var possibleInjuries by remember { mutableStateOf("") }
-    var isRecording by remember { mutableStateOf(false) }
     var isListening by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var firstAidTitles by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var matchedFirstAidId by remember { mutableStateOf<String?>(null) }
     
-    // Warm up the API service when the page loads
+    val db = FirebaseFirestore.getInstance()
+    
+    // Service warmup and titles
     LaunchedEffect(Unit) {
         val apiService = ApiService(context)
         apiService.warmUpService()
+        
+        // Fetch first aid titles
+        db.collection("First_Aid")
+            .get()
+            .addOnSuccessListener { documents ->
+                val map = documents.associate { doc ->
+                    val id = doc.getString("firstAidId") ?: doc.id
+                    val title = doc.getString("title") ?: ""
+                    id to title
+                }
+                firstAidTitles = map
+            }
+            .addOnFailureListener { e ->
+                Log.e("AiPage", "Failed to load first aid titles: ${e.localizedMessage}")
+            }
+    }
+    
+    // Matching
+    LaunchedEffect(possibleInjuries, firstAidTitles) {
+        if (possibleInjuries.isNotEmpty() && firstAidTitles.isNotEmpty()) {
+            matchedFirstAidId = null
+            val predictedInjury = possibleInjuries.trim()
+            
+            // Try to find an exact match (case-insensitive)
+            var matched = false
+            for ((id, title) in firstAidTitles) {
+                if (title.equals(predictedInjury, ignoreCase = true)) {
+                    matchedFirstAidId = id
+                    Log.d("AiPage", "Matched injury '$predictedInjury' with first aid '$title' (ID: $id)")
+                    matched = true
+                    break
+                }
+            }
+            
+            // If no exact match, try partial matching (e.g., "Fracture" matches "Fracture Management")
+            if (!matched) {
+                for ((id, title) in firstAidTitles) {
+                    if (title.contains(predictedInjury, ignoreCase = true) || 
+                        predictedInjury.contains(title, ignoreCase = true)) {
+                        matchedFirstAidId = id
+                        Log.d("AiPage", "Partially matched injury '$predictedInjury' with first aid '$title' (ID: $id)")
+                        break
+                    }
+                }
+            }
+            
+            if (matchedFirstAidId == null) {
+                Log.d("AiPage", "No match found for predicted injury: '$predictedInjury'")
+            }
+        } else {
+            matchedFirstAidId = null
+        }
     }
 
-    // Speech Recognition Launcher
+    // Speech recognition
     val speechLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -87,7 +141,7 @@ fun AiPage(
         isListening = false
     }
 
-    // Auto-stop listening after 10 seconds
+    // Voice timeout
     LaunchedEffect(isListening) {
         if (isListening) {
             kotlinx.coroutines.delay(10000) // 10 seconds timeout
@@ -107,7 +161,7 @@ fun AiPage(
                 .imePadding()
                 .clickable { keyboardController?.hide() }
         ) {
-            // Fixed TopBar
+            // Top bar
             Spacer(modifier = Modifier.height(20.dp))
             TopBar()
             Spacer(modifier = Modifier.height(20.dp))
@@ -115,7 +169,7 @@ fun AiPage(
             // Content
             Column(modifier = Modifier.padding(horizontal = 24.dp)) {
             
-                //call ambulance button
+                // Emergency call
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -166,7 +220,7 @@ fun AiPage(
                 
                 Spacer(modifier = Modifier.height(20.dp))
                 
-                // Scenario Input Card
+                // Scenario input
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -208,7 +262,7 @@ fun AiPage(
                 
                 Spacer(modifier = Modifier.height(5.dp))
                 
-                // Microphone Button
+                // Microphone
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -256,7 +310,7 @@ fun AiPage(
                 
                 Spacer(modifier = Modifier.height(5.dp))
                 
-                // Submit Button
+                // Submit
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -276,6 +330,7 @@ fun AiPage(
                                     isLoading = true
                                     errorMessage = ""
                                     possibleInjuries = ""
+                                    matchedFirstAidId = null
                                     
                                     val apiService = ApiService(context)
                                     apiService.extractKeywords(scenarioText, object : ApiService.ApiCallback {
@@ -341,7 +396,7 @@ fun AiPage(
                 
                 Spacer(modifier = Modifier.height(20.dp))
                 
-                // Possible Injuries Section
+                // Results
                 Text(
                     text = "Possible Injuries/Medical Condition :",
                     color = Color.Black,
@@ -352,7 +407,7 @@ fun AiPage(
                 
                 Spacer(modifier = Modifier.height(5.dp))
                 
-                // Injuries Display Card
+                // Result panel
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -424,20 +479,26 @@ fun AiPage(
 
                 Spacer(modifier = Modifier.height(5.dp))
                 
-                // View First Aid Guidance Button
+                // Guidance
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp)
                         .shadow(4.dp, RoundedCornerShape(10.dp)),
-                    colors = CardDefaults.cardColors(containerColor = colorResource(id = R.color.green_primary)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (matchedFirstAidId != null) 
+                            colorResource(id = R.color.green_primary) 
+                        else Color.Gray
+                    ),
                     shape = RoundedCornerShape(10.dp),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable { 
-                                // TODO: Implement view guidance functionality
+                                matchedFirstAidId?.let { firstAidId ->
+                                    onNavigateToFirstAid(firstAidId)
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -511,7 +572,7 @@ private fun mapPredictedInjury(code: Int): String {
         61 -> "Nerve Damage"
         62 -> "Internal Organ Injury"
         63 -> "Puncture"
-        64 -> "Strain, Sprain"
+        64 -> "Strain and Sprain"
         65 -> "Anoxia"
         66 -> "Hemorrhage"
         67 -> "Electric Shock"

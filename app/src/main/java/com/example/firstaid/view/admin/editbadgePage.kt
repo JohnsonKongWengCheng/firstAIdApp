@@ -263,63 +263,65 @@ fun EditBadgePage(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                if (selectedTopic != null) {
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                // Badge Name
-                Text(
-                    text = "Badge Name:",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.Black,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                    // Badge Name
+                    Text(
+                        text = "Badge Name:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
 
-                OutlinedTextField(
-                    value = badgeName,
-                    onValueChange = { badgeName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedTopic != null && !noTopicsAvailable,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledContainerColor = Color(0xFFF5F5F5),
-                        disabledTextColor = Color.Gray
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
+                    OutlinedTextField(
+                        value = badgeName,
+                        onValueChange = { badgeName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedTopic != null && !noTopicsAvailable,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledTextColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                // Description
-                Text(
-                    text = "Description:",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.Black,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                    // Description
+                    Text(
+                        text = "Description:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedTopic != null && !noTopicsAvailable,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledContainerColor = Color(0xFFF5F5F5),
-                        disabledTextColor = Color.Gray
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
-                
-                Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedTopic != null && !noTopicsAvailable,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledContainerColor = Color(0xFFF5F5F5),
+                            disabledTextColor = Color.Gray
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                    
+                    Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
+                }
             }
         }
 
