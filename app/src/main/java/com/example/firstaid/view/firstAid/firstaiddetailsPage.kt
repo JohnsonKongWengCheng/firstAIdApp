@@ -32,28 +32,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.firstaid.R
 import com.example.firstaid.view.components.TopBarWithBack
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
-import com.google.firebase.firestore.FirebaseFirestore
-import android.speech.tts.TextToSpeech
-import android.util.Log
-import java.util.Locale
+import com.example.firstaid.viewmodel.firstAid.FirstAidDetailsViewModel
+import android.app.Application
 import coil.compose.AsyncImage
-import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
-
-private data class FirstAidItem(val id: String, val title: String)
-private data class LearningItem(val id: String, val learningId: String, val firstAidId: String)
-private data class ContentItem(val id: String, val contentId: String, val learningId: String, val title: String, val content: String, val stepNumber: Int, val imageUrl: String? = null)
+import android.util.Log
 
 @Composable
 fun FirstAidDetailsPage(
     firstAidId: String,
+    viewModel: FirstAidDetailsViewModel = viewModel(
+        factory = FirstAidDetailsViewModel.Factory(
+            LocalContext.current.applicationContext as Application,
+            firstAidId
+        )
+    ),
     onBackClick: () -> Unit,
     onCompleteClick: () -> Unit = {},
     onSelectBottom: (BottomItem) -> Unit = {}
@@ -61,131 +61,15 @@ fun FirstAidDetailsPage(
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val context = LocalContext.current
 
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var firstAidTitle by remember { mutableStateOf("") }
-    var learningId by remember { mutableStateOf("") }
-    var contentItems by remember { mutableStateOf<List<ContentItem>>(emptyList()) }
-    var currentStepIndex by remember { mutableStateOf(0) }
-    var isTtsInitialized by remember { mutableStateOf(false) }
-    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
-    var autoPlayedSteps by remember { mutableStateOf(setOf<Int>()) }
-
-    val db = FirebaseFirestore.getInstance()
-
-    // Initialize TTS
-    LaunchedEffect(Unit) {
-        tts = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val result = tts?.setLanguage(Locale.US)
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e("TTS", "Language not supported")
-                } else {
-                    isTtsInitialized = true
-                    Log.d("TTS", "TTS initialized successfully")
-                }
-            } else {
-                Log.e("TTS", "TTS initialization failed")
-            }
-        }
-    }
-
-    // Cleanup TTS when composable is disposed
-    DisposableEffect(Unit) {
-        onDispose {
-            tts?.stop()
-            tts?.shutdown()
-        }
-    }
-
-    // Fetch First_Aid title and Learning data
-    LaunchedEffect(firstAidId) {
-        try {
-            if (firstAidId.isBlank()) {
-                errorMessage = "Invalid First Aid ID: empty"
-                isLoading = false
-                return@LaunchedEffect
-            }
-
-            // Debug: Log the firstAidId being used
-            println("DEBUG: FirstAidDetailsPage - firstAidId: '$firstAidId'")
-
-            // Get First_Aid title by querying firstAidId field
-            db.collection("First_Aid")
-                .whereEqualTo("firstAidId", firstAidId)
-                .get()
-                .addOnSuccessListener { docs ->
-                    if (docs.documents.isNotEmpty()) {
-                        val doc = docs.documents.first()
-                        firstAidTitle = doc.getString("title") ?: ""
-                    } else {
-                        errorMessage = "First Aid not found"
-                        isLoading = false
-                    }
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load First Aid data"
-                    isLoading = false
-                }
-
-            // Get Learning data
-            db.collection("Learning")
-                .whereEqualTo("firstAidId", firstAidId)
-                .get()
-                .addOnSuccessListener { learningDocs ->
-                    if (learningDocs.documents.isNotEmpty()) {
-                        val learningDoc = learningDocs.documents.first()
-                        learningId = learningDoc.getString("learningId") ?: ""
-
-                        // Get Content data
-                        db.collection("Content")
-                            .whereEqualTo("learningId", learningId)
-                            .get()
-                            .addOnSuccessListener { contentDocs ->
-                                val contents = contentDocs.documents.mapNotNull { doc ->
-                                    val imageUrl = doc.getString("imageUrl")
-                                    Log.d("FirstAidDetails", "Loaded content - stepNumber: ${doc.getLong("stepNumber")}, imageUrl: $imageUrl")
-                                    ContentItem(
-                                        id = doc.id,
-                                        contentId = doc.getString("contentId") ?: "",
-                                        learningId = doc.getString("learningId") ?: "",
-                                        title = doc.getString("title") ?: "",
-                                        content = doc.getString("content") ?: "",
-                                        stepNumber = (doc.getLong("stepNumber")?.toInt()) ?: 1,
-                                        imageUrl = imageUrl
-                                    )
-                                }.sortedBy { it.stepNumber }
-
-                                contentItems = contents
-                                currentStepIndex = 0
-                                isLoading = false
-                            }
-                            .addOnFailureListener { e ->
-                                errorMessage = e.localizedMessage ?: "Failed to load content"
-                                isLoading = false
-                            }
-                    } else {
-                        errorMessage = "No learning data found"
-                        isLoading = false
-                    }
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load learning data"
-                    isLoading = false
-                }
-        } catch (e: Exception) {
-            errorMessage = e.localizedMessage ?: "Failed to load data"
-            isLoading = false
-        }
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     // Auto play voice once per step
-    LaunchedEffect(currentStepIndex, isTtsInitialized, contentItems) {
-        if (isTtsInitialized && tts != null && contentItems.isNotEmpty()) {
-            if (!autoPlayedSteps.contains(currentStepIndex)) {
-                val textToSpeak = contentItems[currentStepIndex].content
-                tts?.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, null)
-                autoPlayedSteps = autoPlayedSteps + currentStepIndex
+    LaunchedEffect(uiState.currentStepIndex, uiState.isTtsInitialized, uiState.contentItems) {
+        if (uiState.isTtsInitialized && uiState.contentItems.isNotEmpty()) {
+            if (!uiState.autoPlayedSteps.contains(uiState.currentStepIndex)) {
+                val textToSpeak = uiState.contentItems[uiState.currentStepIndex].content
+                viewModel.playTextToSpeech()
+                viewModel.markStepAsAutoPlayed(uiState.currentStepIndex)
             }
         }
     }
@@ -193,22 +77,20 @@ fun FirstAidDetailsPage(
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(modifier = Modifier.fillMaxSize()) {
             TopBarWithBack(
-                title = firstAidTitle ?: "First Aid Details",
+                title = uiState.firstAidTitle.ifEmpty { "First Aid Details" },
                 onBackClick = onBackClick
             )
 
-            if (isLoading) {
+            if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = colorResource(id = R.color.green_primary))
                 }
-            } else if (errorMessage != null) {
+            } else if (uiState.errorMessage != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(text = errorMessage ?: "", color = Color.Red)
+                    Text(text = uiState.errorMessage ?: "", color = Color.Red)
                 }
-            } else if (contentItems.isNotEmpty()) {
-                val currentContent = contentItems[currentStepIndex]
-                val isFirstStep = currentStepIndex == 0
-                val isLastStep = currentStepIndex == contentItems.size - 1
+            } else if (uiState.contentItems.isNotEmpty()) {
+                val currentContent = uiState.currentContent ?: return@Column
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -266,7 +148,7 @@ fun FirstAidDetailsPage(
                 Spacer(modifier = Modifier.height(24.dp))
                 Row {
                     Text(
-                        text = (currentStepIndex + 1).toString() + ".",
+                        text = (uiState.currentStepIndex + 1).toString() + ".",
                         color = Color.Black,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Medium,
@@ -292,7 +174,7 @@ fun FirstAidDetailsPage(
 
                 // Illustration - only show if image URL exists
                 val imageUrl = currentContent.imageUrl
-                Log.d("FirstAidDetails", "Rendering step ${currentStepIndex + 1} - imageUrl: '$imageUrl', isNullOrBlank: ${imageUrl.isNullOrBlank()}")
+                Log.d("FirstAidDetails", "Rendering step ${uiState.currentStepIndex + 1} - imageUrl: '$imageUrl', isNullOrBlank: ${imageUrl.isNullOrBlank()}")
                 
                 if (!imageUrl.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(24.dp))
@@ -325,13 +207,7 @@ fun FirstAidDetailsPage(
                 // Sound button
                 Button(
                     onClick = {
-                        if (isTtsInitialized && tts != null) {
-                            val textToSpeak = "${currentContent.content}"
-                            tts?.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, null)
-                            Log.d("TTS", "Speaking: $textToSpeak")
-                        } else {
-                            Log.e("TTS", "TTS not initialized")
-                        }
+                        viewModel.playTextToSpeech()
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -345,7 +221,7 @@ fun FirstAidDetailsPage(
                     shape = RoundedCornerShape(10.dp),
                     enabled = true // Always enabled, but TTS functionality depends on initialization
                 ) {
-                    if (isTtsInitialized) {
+                    if (uiState.isTtsInitialized) {
                         Icon(
                             imageVector = Icons.Filled.VolumeUp,
                             contentDescription = "Play",
@@ -368,9 +244,9 @@ fun FirstAidDetailsPage(
                         .padding(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (!isFirstStep) {
+                    if (!uiState.isFirstStep) {
                         Button(
-                            onClick = { currentStepIndex-- },
+                            onClick = { viewModel.onPreviousStep() },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(46.dp)
@@ -395,7 +271,7 @@ fun FirstAidDetailsPage(
                         }
                     }
 
-                    if (isLastStep) {
+                    if (uiState.isLastStep) {
                         Button(
                             onClick = onCompleteClick,
                             modifier = Modifier
@@ -409,7 +285,7 @@ fun FirstAidDetailsPage(
                         }
                     } else {
                         Button(
-                            onClick = { currentStepIndex++ },
+                            onClick = { viewModel.onNextStep() },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(46.dp)

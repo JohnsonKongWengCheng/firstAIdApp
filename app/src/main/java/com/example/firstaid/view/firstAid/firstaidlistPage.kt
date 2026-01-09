@@ -29,12 +29,12 @@ import com.example.firstaid.R
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBar
-import com.google.firebase.firestore.FirebaseFirestore
-
-private data class FirstAid(val id: String, val title: String)
+import com.example.firstaid.viewmodel.firstAid.FirstAidListViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun FirstAidListPage(
+    viewModel: FirstAidListViewModel = viewModel(),
     onItemClick: (String) -> Unit = {},
     onSelectBottom: (BottomItem) -> Unit = {}
 ) {
@@ -43,109 +43,7 @@ fun FirstAidListPage(
         Font(R.font.cabin, FontWeight.Bold)
     )
 
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    val items = remember { mutableStateListOf<FirstAid>() }
-    val topicsWithContent = remember { mutableStateSetOf<String>() }
-
-    // Check for topics that have both Learning modules AND Content entries
-    DisposableEffect(Unit) {
-        val db = FirebaseFirestore.getInstance()
-        var learningRegistration: com.google.firebase.firestore.ListenerRegistration? = null
-        var firstAidRegistration: com.google.firebase.firestore.ListenerRegistration? = null
-        
-        // Query Learning collection to find topics with learning modules
-        learningRegistration = db.collection("Learning")
-            .addSnapshotListener { learningSnapshot, learningError ->
-                if (learningError != null) {
-                    errorMessage = learningError.localizedMessage ?: "Failed to load learning data"
-                    isLoading = false
-                    return@addSnapshotListener
-                }
-                
-                val learningDocs = learningSnapshot?.documents ?: emptyList()
-                val learningIds = mutableSetOf<String>()
-                val firstAidIds = mutableSetOf<String>()
-                
-                for (doc in learningDocs) {
-                    val firstAidId = (doc.get("firstAidId") as? String)?.trim()
-                    val learningId = (doc.get("learningId") as? String)?.trim()
-                    if (!firstAidId.isNullOrEmpty() && !learningId.isNullOrEmpty()) {
-                        firstAidIds.add(firstAidId)
-                        learningIds.add(learningId)
-                    }
-                }
-                
-                // Now check which learning modules have actual content
-                if (learningIds.isNotEmpty()) {
-                    db.collection("Content")
-                        .whereIn("learningId", learningIds.toList())
-                        .get()
-                        .addOnSuccessListener { contentSnapshot ->
-                            val contentLearningIds = contentSnapshot.documents.mapNotNull { doc ->
-                                doc.getString("learningId")?.trim()
-                            }.toSet()
-                            
-                            // Find which firstAidIds have both learning modules and content
-                            topicsWithContent.clear()
-                            for (doc in learningDocs) {
-                                val firstAidId = (doc.get("firstAidId") as? String)?.trim()
-                                val learningId = (doc.get("learningId") as? String)?.trim()
-                                if (!firstAidId.isNullOrEmpty() && 
-                                    !learningId.isNullOrEmpty() && 
-                                    contentLearningIds.contains(learningId)) {
-                                    topicsWithContent.add(firstAidId)
-                                }
-                            }
-                            
-                            // Now query First_Aid collection and filter by topics with content
-                            firstAidRegistration = db.collection("First_Aid")
-                                .addSnapshotListener { snapshot, e ->
-                                    if (e != null) {
-                                        errorMessage = e.localizedMessage ?: "Failed to load First Aid list"
-                                        isLoading = false
-                                        return@addSnapshotListener
-                                    }
-                                    
-                                    val docs = snapshot?.documents ?: emptyList()
-                                    val tempItems = mutableListOf<FirstAid>()
-                                    for (doc in docs) {
-                                        val title = (doc.get("title") as? String)?.trim().orEmpty()
-                                        val firstAidId = (doc.get("firstAidId") as? String)?.trim().orEmpty()
-                                        // Use firstAidId field as the ID, fallback to document id if not available
-                                        val resolvedId = if (firstAidId.isNotEmpty()) firstAidId else doc.id
-                                        val resolvedTitle = if (title.isNotEmpty()) title else doc.id
-                                        
-                                        // Only add topics that have both learning modules and content
-                                        if (topicsWithContent.contains(resolvedId)) {
-                                            println("DEBUG: FirstAidListPage - doc.id: '${doc.id}', firstAidId: '$firstAidId', title: '$resolvedTitle', resolvedId: '$resolvedId'")
-                                            tempItems.add(FirstAid(id = resolvedId, title = resolvedTitle))
-                                        }
-                                    }
-                                    // Sort items alphabetically by title
-                                    items.clear()
-                                    items.addAll(tempItems.sortedBy { it.title })
-                                    errorMessage = null
-                                    isLoading = false
-                                }
-                        }
-                        .addOnFailureListener { e ->
-                            errorMessage = e.localizedMessage ?: "Failed to load content data"
-                            isLoading = false
-                        }
-                } else {
-                    // No learning modules found, clear items
-                    items.clear()
-                    errorMessage = null
-                    isLoading = false
-                }
-            }
-        
-        onDispose { 
-            learningRegistration?.remove()
-            firstAidRegistration?.remove()
-        }
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Spacer(modifier = Modifier.height(20.dp))
@@ -207,20 +105,20 @@ fun FirstAidListPage(
             Spacer(modifier = Modifier.height(20.dp))
 
             when {
-                isLoading -> {
+                uiState.isLoading -> {
                     Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = colorResource(id = R.color.green_primary))
                     }
                 }
-                errorMessage != null -> {
+                uiState.errorMessage != null -> {
                     Text(
-                        text = errorMessage ?: "",
+                        text = uiState.errorMessage ?: "",
                         color = Color.Red,
                         fontSize = 14.sp
                     )
                 }
                 else -> {
-                    items.forEachIndexed { index, item ->
+                    uiState.items.forEachIndexed { index, item ->
                         FirstAidItem(
                             title = item.title,
                             onClick = { 
@@ -228,7 +126,7 @@ fun FirstAidListPage(
                                 onItemClick(item.id) 
                             }
                         )
-                        if (index != items.lastIndex) {
+                        if (index != uiState.items.lastIndex) {
                             Spacer(modifier = Modifier.height(13.dp))
                         }
                     }

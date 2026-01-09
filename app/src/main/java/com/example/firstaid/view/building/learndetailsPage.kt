@@ -6,7 +6,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,151 +21,50 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.firstaid.R
-import com.example.firstaid.view.components.BottomBar
-import com.example.firstaid.view.components.BottomItem
-import com.example.firstaid.view.components.TopBarWithBack
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.launch
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.layout.ContentScale
 import android.util.Log
-
-private data class LearningContent(
-    val id: String,
-    val learningId: String,
-    val firstAidId: String,
-    val title: String,
-    val content: String,
-    val description: String? = null,
-    val imageUrl: String? = null,
-    val stepNumber: Int = 1
-)
+import com.example.firstaid.R
+import com.example.firstaid.view.components.BottomBar
+import com.example.firstaid.view.components.BottomItem
+import com.example.firstaid.view.components.TopBarWithBack
+import com.example.firstaid.model.building.LearningContent
+import com.example.firstaid.viewmodel.building.LearnDetailsViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun LearnDetailsPage(
     learningId: String,
     onBackClick: () -> Unit = {},
-    onSelectBottom: (BottomItem) -> Unit = {}
+    onSelectBottom: (BottomItem) -> Unit = {},
+    viewModel: LearnDetailsViewModel? = null
 ) {
-    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var firstAidTitle by remember { mutableStateOf("") }
-    var learningContent by remember { mutableStateOf<List<LearningContent>>(emptyList()) }
-    var isCompleted by remember { mutableStateOf(false) }
-    var showSuccessMessage by remember { mutableStateOf(false) }
-
-    val db = FirebaseFirestore.getInstance()
+    val prefs = remember(learningId) { context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE) }
+    val currentUserId = remember(learningId) { prefs.getString("userId", null) }
     
-    // Get current user ID from SharedPreferences
-    val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
-    val currentUserId = prefs.getString("userId", null)
-
-    // Fetch Learning data and related content
-    LaunchedEffect(learningId) {
-        try {
-            if (learningId.isBlank()) {
-                errorMessage = "Invalid Learning ID: empty"
-                isLoading = false
-                return@LaunchedEffect
+    val actualViewModel: LearnDetailsViewModel = viewModel ?: androidx.lifecycle.viewmodel.compose.viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                return LearnDetailsViewModel(learningId, currentUserId) as T
             }
+        }
+    )
+    
+    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
+    val uiState by actualViewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
 
-            // Get Learning data
-            db.collection("Learning")
-                .whereEqualTo("learningId", learningId)
-                .get()
-                .addOnSuccessListener { learningDocs ->
-                    if (learningDocs.documents.isNotEmpty()) {
-                        val learningDoc = learningDocs.documents.first()
-                        val firstAidId = learningDoc.getString("firstAidId") ?: ""
-
-                        // Get First_Aid title
-                        db.collection("First_Aid")
-                            .whereEqualTo("firstAidId", firstAidId)
-                            .get()
-                            .addOnSuccessListener { firstAidDocs ->
-                                if (firstAidDocs.documents.isNotEmpty()) {
-                                    val firstAidDoc = firstAidDocs.documents.first()
-                                    firstAidTitle = firstAidDoc.getString("title") ?: ""
-                                }
-                            }
-
-                        // Get Content data for this learning
-                        db.collection("Content")
-                            .whereEqualTo("learningId", learningId)
-                            .get()
-                            .addOnSuccessListener { contentDocs ->
-                                val contents = contentDocs.documents.mapNotNull { doc ->
-                                    LearningContent(
-                                        id = doc.id,
-                                        learningId = doc.getString("learningId") ?: "",
-                                        firstAidId = firstAidId,
-                                        title = doc.getString("title") ?: "",
-                                        content = doc.getString("content") ?: "",
-                                        description = doc.getString("description"),
-                                        imageUrl = doc.getString("imageUrl"),
-                                        stepNumber = (doc.getLong("stepNumber")?.toInt()) ?: 1
-                                    )
-                                }.sortedBy { it.stepNumber }
-
-                                learningContent = contents
-                                
-                                // Update learning progress to "Started" when user opens learning material (only if not already completed)
-                                if (currentUserId != null) {
-                                    db.collection("Learning_Progress")
-                                        .whereEqualTo("userId", currentUserId)
-                                        .whereEqualTo("learningId", learningId)
-                                        .get()
-                                        .addOnSuccessListener { progressDocs ->
-                                            if (progressDocs.documents.isNotEmpty()) {
-                                                val progressDoc = progressDocs.documents.first()
-                                                val currentStatus = progressDoc.getString("status") ?: "Pending"
-                                                
-                                                // Check if already completed
-                                                isCompleted = currentStatus == "Completed"
-                                                
-                                                // Only update to "Started" if not already "Completed"
-                                                if (currentStatus != "Completed") {
-                                                    progressDoc.reference.update("status", "Started")
-                                                        .addOnSuccessListener {
-                                                            android.util.Log.d("LearnDetails", "Learning progress updated to Started")
-                                                        }
-                                                        .addOnFailureListener { e ->
-                                                            android.util.Log.e("LearnDetails", "Failed to update learning progress: ${e.localizedMessage}")
-                                                        }
-                                                } else {
-                                                    android.util.Log.d("LearnDetails", "Learning material already completed, skipping status update")
-                                                }
-                                            }
-                                        }
-                                        .addOnFailureListener { e ->
-                                            android.util.Log.e("LearnDetails", "Failed to fetch learning progress: ${e.localizedMessage}")
-                                        }
-                                }
-                                
-                                isLoading = false
-                            }
-                            .addOnFailureListener { e ->
-                                errorMessage = e.localizedMessage ?: "Failed to load content"
-                                isLoading = false
-                            }
-                    } else {
-                        errorMessage = "No learning data found"
-                        isLoading = false
-                    }
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load learning data"
-                    isLoading = false
-                }
-        } catch (e: Exception) {
-            errorMessage = e.localizedMessage ?: "Failed to load data"
-            isLoading = false
+    // Handle success message navigation
+    LaunchedEffect(uiState.showSuccessMessage) {
+        if (uiState.showSuccessMessage) {
+            delay(1000)
+            actualViewModel.dismissSuccessMessage()
+            onBackClick()
         }
     }
 
@@ -174,23 +72,23 @@ fun LearnDetailsPage(
         Column(modifier = Modifier.fillMaxSize()) {
             // Top Bar with back button
             TopBarWithBack(
-                title = firstAidTitle.ifEmpty { "Learn Details" },
+                title = uiState.firstAidTitle.ifEmpty { "Learn Details" },
                 onBackClick = onBackClick
             )
 
-            if (isLoading) {
+            if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = colorResource(id = R.color.green_primary))
                 }
-            } else if (errorMessage != null) {
+            } else if (uiState.errorMessage != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = errorMessage ?: "",
+                        text = uiState.errorMessage ?: "",
                         color = Color.Red,
                         fontSize = 16.sp
                     )
                 }
-            } else if (learningContent.isNotEmpty()) {
+            } else if (uiState.learningContent.isNotEmpty()) {
                 // Scrollable content
                 Column(
                     modifier = Modifier
@@ -199,7 +97,7 @@ fun LearnDetailsPage(
                         .padding(bottom = 100.dp) // Space for bottom bar
                 ) {
                     // Learning content items
-                    learningContent.forEachIndexed { index, content ->
+                    uiState.learningContent.forEachIndexed { index, content ->
                         LearningContentCard(
                             content = content,
                             index = index + 1,
@@ -207,42 +105,13 @@ fun LearnDetailsPage(
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                         )
                     }
-                    
+
                     // Complete button (only show if not already completed)
-                    if (learningContent.isNotEmpty() && !isCompleted) {
+                    if (uiState.learningContent.isNotEmpty() && !uiState.isCompleted) {
                         Spacer(modifier = Modifier.height(24.dp))
                         Button(
                             onClick = {
-                                // Update learning progress to "Completed"
-                                if (currentUserId != null) {
-                                    db.collection("Learning_Progress")
-                                        .whereEqualTo("userId", currentUserId)
-                                        .whereEqualTo("learningId", learningId)
-                                        .get()
-                                        .addOnSuccessListener { progressDocs ->
-                                            if (progressDocs.documents.isNotEmpty()) {
-                                                val progressDoc = progressDocs.documents.first()
-                                                progressDoc.reference.update("status", "Completed")
-                                                    .addOnSuccessListener {
-                                                        android.util.Log.d("LearnDetails", "Learning progress updated to Completed for learningId: $learningId")
-                                                        isCompleted = true // Update local state
-                                                        showSuccessMessage = true
-                                                        // Show success message for 1 second, then navigate
-                                                        coroutineScope.launch {
-                                                            kotlinx.coroutines.delay(1000)
-                                                            showSuccessMessage = false
-                                                            onBackClick() // Navigate back to learn page
-                                                        }
-                                                    }
-                                                    .addOnFailureListener { e ->
-                                                        android.util.Log.e("LearnDetails", "Failed to update learning progress: ${e.localizedMessage}")
-                                                    }
-                                            }
-                                        }
-                                        .addOnFailureListener { e ->
-                                            android.util.Log.e("LearnDetails", "Failed to fetch learning progress: ${e.localizedMessage}")
-                                        }
-                                }
+                                actualViewModel.markAsCompleted(onBackClick)
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -259,9 +128,9 @@ fun LearnDetailsPage(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        
+
                         // Success message
-                        if (showSuccessMessage) {
+                        if (uiState.showSuccessMessage) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Card(
                                 modifier = Modifier
@@ -294,7 +163,7 @@ fun LearnDetailsPage(
                                 }
                             }
                         }
-                    } else if (learningContent.isNotEmpty() && isCompleted) {
+                    } else if (uiState.learningContent.isNotEmpty() && uiState.isCompleted) {
                         // Show completion message if already completed
                         Spacer(modifier = Modifier.height(24.dp))
                         Card(
@@ -405,7 +274,7 @@ private fun LearningContentCard(
                 )
             }
 
-            // Image if available - display as complete image like firstaiddetailsPage
+            // Image if available
             if (!content.imageUrl.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(24.dp))
                 Box(
@@ -416,7 +285,7 @@ private fun LearningContentCard(
                         .data(content.imageUrl)
                         .crossfade(true)
                         .build()
-                    
+
                     AsyncImage(
                         model = imageRequest,
                         contentDescription = "Step illustration",

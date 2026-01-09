@@ -25,107 +25,26 @@ import com.example.firstaid.R
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBarWithBack
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import android.content.SharedPreferences
-import androidx.compose.ui.text.style.TextOverflow
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-// Data class for badge
-data class Badge(
-    val id: String,
-    val title: String,
-    val description: String,
-    val isEarned: Boolean = false,
-    val earnedDate: String? = null
-)
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.firstaid.viewmodel.userProfile.MyBadgesViewModel
+import com.example.firstaid.model.userProfile.BadgeData
 
 @Composable
 fun MyBadgesPage(
     onBackClick: () -> Unit = {},
-    onSelectBottom: (BottomItem) -> Unit = {}
+    onSelectBottom: (BottomItem) -> Unit = {},
+    viewModel: MyBadgesViewModel = viewModel()
 ) {
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val context = LocalContext.current
     val sharedPreferences = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
     val currentUserId = sharedPreferences.getString("userId", null)
-    val db = FirebaseFirestore.getInstance()
     
-    // State for badges
-    var badges by remember { mutableStateOf<List<Badge>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var allBadges by remember { mutableStateOf<List<Badge>>(emptyList()) }
-    var userBadges by remember { mutableStateOf<List<String>>(emptyList()) }
+    val uiState by viewModel.uiState.collectAsState()
     
-    // Load badges from Firebase
-    LaunchedEffect(Unit) {
-        if (currentUserId != null) {
-            // Load all badges from Badge table
-            db.collection("Badge")
-                .get()
-                .addOnSuccessListener { badgeDocuments ->
-                    val badgeList = badgeDocuments.mapNotNull { doc ->
-                        Badge(
-                            id = doc.getString("badgeId") ?: doc.id,
-                            title = doc.getString("title") ?: "",
-                            description = doc.getString("description") ?: ""
-                        )
-                    }
-                    allBadges = badgeList
-                    
-                    // Load user's earned badges from User_Badge table
-                    db.collection("User_Badge")
-                        .whereEqualTo("userId", currentUserId)
-                        .get()
-                        .addOnSuccessListener { userBadgeDocuments ->
-                            val earnedBadgeIds = userBadgeDocuments.mapNotNull { doc ->
-                                doc.getString("badgeId")
-                            }
-                            userBadges = earnedBadgeIds
-                            
-                            android.util.Log.d("MyBadgesPage", "Current userId: $currentUserId")
-                            android.util.Log.d("MyBadgesPage", "Found ${userBadgeDocuments.size()} earned badges")
-                            android.util.Log.d("MyBadgesPage", "Earned badge IDs: $earnedBadgeIds")
-                            
-                            // Only show badges that the user has actually earned
-                            badges = userBadgeDocuments.mapNotNull { userBadgeDoc ->
-                                val badgeId = userBadgeDoc.getString("badgeId")
-                                val earnedDate = userBadgeDoc.getTimestamp("earnedDate")?.toDate()
-                                val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                                
-                                // Find the badge details from the badge list
-                                val badgeDetails = badgeList.find { it.id == badgeId }
-                                if (badgeDetails != null) {
-                                    Badge(
-                                        id = badgeDetails.id,
-                                        title = badgeDetails.title,
-                                        description = badgeDetails.description,
-                                        isEarned = true,
-                                        earnedDate = earnedDate?.let { dateFormat.format(it) }
-                                    )
-                                } else {
-                                    null
-                                }
-                            }
-                            isLoading = false
-                        }
-                        .addOnFailureListener { e ->
-                            android.util.Log.e("MyBadgesPage", "Failed to load user badges: ${e.localizedMessage}")
-                            badges = emptyList() // Show no badges if failed to load user badges
-                            isLoading = false
-                        }
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("MyBadgesPage", "Failed to load badges: ${e.localizedMessage}")
-                    isLoading = false
-                }
-        } else {
-            android.util.Log.e("MyBadgesPage", "No current user ID found")
-            badges = emptyList() // Show no badges if no user ID
-            isLoading = false
-        }
+    // Load badges from ViewModel
+    LaunchedEffect(currentUserId) {
+        viewModel.loadBadges(currentUserId)
     }
     
     Box(
@@ -152,7 +71,7 @@ fun MyBadgesPage(
             Spacer(modifier = Modifier.height(41.dp))
             
             // Badges List
-            if (isLoading) {
+            if (uiState.isLoading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -162,7 +81,7 @@ fun MyBadgesPage(
                     )
                 }
             } else {
-                if (badges.isEmpty()) {
+                if (uiState.badges.isEmpty()) {
                     // Show message when user has no badges
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -200,7 +119,7 @@ fun MyBadgesPage(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(badges) { badge ->
+                        items(uiState.badges) { badge ->
                             BadgeCard(
                                 badge = badge,
                                 fontFamily = cabin
@@ -223,7 +142,7 @@ fun MyBadgesPage(
 
 @Composable
 private fun BadgeCard(
-    badge: Badge,
+    badge: BadgeData,
     fontFamily: FontFamily
 ) {
     Card(

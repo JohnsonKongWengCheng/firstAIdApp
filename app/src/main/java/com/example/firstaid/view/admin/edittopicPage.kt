@@ -45,13 +45,28 @@ fun EditTopicPage(
     var showSuccess by remember { mutableStateOf(false) }
     var isFormatInvalid by remember { mutableStateOf(false) }
     var isSameTitle by remember { mutableStateOf(false) }
+    var isWhitespaceOnly by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     // Validate new title format and difference from current title
     LaunchedEffect(newTitle.text, selectedTopic) {
-        val title = newTitle.text.trim()
+        val rawTitle = newTitle.text
+        val title = rawTitle.trim()
         val currentTopic = selectedTopic
+        
+        // First check for whitespace-only input (even if trimmed is empty)
+        if (rawTitle.isNotEmpty() && rawTitle.isBlank()) {
+            isWhitespaceOnly = true
+            isFormatInvalid = false
+            isSameTitle = false
+            validationError = "First Aid Topic Title should not be empty"
+            return@LaunchedEffect
+        }
+        
+        // Reset whitespace flag if not whitespace-only
+        isWhitespaceOnly = false
+        
         if (title.isNotEmpty() && currentTopic != null) {
             isFormatInvalid = false
             isSameTitle = false
@@ -174,6 +189,7 @@ fun EditTopicPage(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        val whitespaceError = isWhitespaceOnly
                         OutlinedTextField(
                             value = newTitle,
                             onValueChange = { newTitle = it },
@@ -182,12 +198,13 @@ fun EditTopicPage(
                             singleLine = true,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else Color.Transparent,
-                                focusedBorderColor = if (isFormatInvalid || isSameTitle) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedBorderColor = if (isFormatInvalid || isSameTitle || whitespaceError) Color.Red else Color.Transparent,
+                                focusedBorderColor = if (isFormatInvalid || isSameTitle || whitespaceError) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                errorBorderColor = Color.Red,
                                 unfocusedContainerColor = Color(0xFFECF0EC),
                                 focusedContainerColor = Color(0xFFE6F3E6)
                             ),
-                            isError = isFormatInvalid || isSameTitle
+                            isError = isFormatInvalid || isSameTitle || whitespaceError
                         )
                         
                         // Error message display
@@ -248,7 +265,7 @@ fun EditTopicPage(
                             }
                     }
                 },
-                enabled = !isSaving && selectedTopic != null && newTitle.text.isNotBlank() && !isFormatInvalid && !isSameTitle,
+                enabled = !isSaving && selectedTopic != null && newTitle.text.isNotBlank() && !isFormatInvalid && !isSameTitle && !isWhitespaceOnly,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

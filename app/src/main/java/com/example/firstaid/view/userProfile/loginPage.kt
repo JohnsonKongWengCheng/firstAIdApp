@@ -35,21 +35,18 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.auth.AuthResult
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.firstaid.viewmodel.userProfile.LoginViewModel
 
 @Composable
 fun LoginPage(
     redirectTo: String? = null,
     onLoginSuccess: () -> Unit = {},
-    onSignupClick: () -> Unit = {}
+    onSignupClick: () -> Unit = {},
+    viewModel: LoginViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val auth = FirebaseAuth.getInstance()
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsState()
     val alfaslabone = FontFamily(
         Font(R.font.alfaslabone_regular, FontWeight.Bold)
     )
@@ -60,16 +57,21 @@ fun LoginPage(
         Font(R.font.matesc_regular, FontWeight.Bold)
     )
 
-    var emailError by remember { mutableStateOf<String?>(null) }
-    var passwordError by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$")
+    val brandGreen = colorResource(id = R.color.green_primary)
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val scrollState = rememberScrollState()
     
+    val redirectMessage = remember(redirectTo) {
+        when (redirectTo) {
+            "learn" -> "Log in to continue learning modules."
+            "account" -> "Log in to view your account."
+            "ai" -> "Log in to access the AI helper."
+            null, "" -> null
+            else -> null
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -77,18 +79,16 @@ fun LoginPage(
     ) {
         // Fixed TopBar
         Spacer(modifier = Modifier.height(60.dp))
-        
-        // Scrollable content
+
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(scrollState)
+                .verticalScroll(scrollState) // Scrollable content
                 .imePadding()
                 .padding(horizontal = 48.dp)
                 .clickable { keyboardController?.hide() },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
             Box(
                 modifier = Modifier.size(118.dp).clip(RoundedCornerShape(10.dp)).border(
                     width = 1.dp,
@@ -118,6 +118,19 @@ fun LoginPage(
 
             Spacer(modifier = Modifier.height(32.dp))
 
+            redirectMessage?.let { message ->
+                Text(
+                    text = message,
+                    fontSize = 14.sp,
+                    fontFamily = cabin,
+                    color = Color.Gray,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -133,15 +146,12 @@ fun LoginPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
-                value = email,
-                onValueChange = {
-                    email = it
-                    emailError = if (emailRegex.matches(it)) null else "Invalid email format"
-                    errorMessage = null
-                },
+                value = uiState.email,
+                onValueChange = { viewModel.onEmailChange(it) },
                 placeholder = { Text("Enter Email Address", color = Color(0xFFAAAAAA)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isError = uiState.emailError != null,
                 shape = RoundedCornerShape(10.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color(0xFFECecec),
@@ -150,17 +160,18 @@ fun LoginPage(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent,
-                    cursorColor = Color.Black
+                    cursorColor = Color.Black,
+                    errorContainerColor = Color(0xFFECecec)
                 )
             )
 
-            if (emailError != null) {
+            if (uiState.emailError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                 ) {
                     Text(
-                        text = emailError ?: "",
+                        text = uiState.emailError ?: "",
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(start = 8.dp, top = 4.dp)
@@ -185,26 +196,18 @@ fun LoginPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
-                value = password,
-                onValueChange = {
-                    password = it
-                    passwordError = when {
-                        it.isBlank() -> "Password cannot be empty"
-                        it.contains(" ") -> "Password cannot contain spaces"
-                        it.length < 6 -> "Password must be at least 6 characters"
-                        else -> null
-                    }
-                    errorMessage = null
-                },
+                value = uiState.password,
+                onValueChange = { viewModel.onPasswordChange(it) },
                 placeholder = { Text("Enter Password", color = Color(0xFFAAAAAA)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isError = uiState.passwordError != null,
                 shape = RoundedCornerShape(10.dp),
-                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation = if (uiState.showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    IconButton(onClick = { showPassword = !showPassword }) {
+                    IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
                         Icon(
-                            imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            imageVector = if (uiState.showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                             contentDescription = null,
                             tint = Color.Black
                         )
@@ -217,17 +220,18 @@ fun LoginPage(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent,
-                    cursorColor = Color.Black
+                    cursorColor = Color.Black,
+                    errorContainerColor = Color(0xFFECecec)
                 )
             )
 
-            if (passwordError != null) {
+            if (uiState.passwordError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                 ) {
                     Text(
-                        text = passwordError ?: "",
+                        text = uiState.passwordError ?: "",
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(start = 8.dp, top = 4.dp)
@@ -237,7 +241,93 @@ fun LoginPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            errorMessage?.let { error ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = {
+                        viewModel.resetPassword(
+                            onSuccess = {},
+                            onFailure = {}
+                        )
+                    }
+                ) {
+                    if (uiState.isResettingPassword) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Forgot Password?",
+                            color = brandGreen,
+                            fontFamily = cabin,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            uiState.forgotPasswordMessage?.let { message ->
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = message,
+                        color = androidx.compose.ui.graphics.Color(uiState.forgotPasswordMessageColor.toInt()),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+                    )
+                }
+            }
+
+            uiState.verificationMessage?.let { message ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = message,
+                        color = androidx.compose.ui.graphics.Color(uiState.verificationMessageColor.toInt()),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                TextButton(
+                    onClick = {
+                        viewModel.resendVerificationEmail(
+                            onSuccess = {},
+                            onFailure = {}
+                        )
+                    }
+                ) {
+                    if (uiState.isResendingVerification) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Resend Verification Email",
+                            color = brandGreen,
+                            fontFamily = cabin,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            uiState.errorMessage?.let { error ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -253,113 +343,47 @@ fun LoginPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-    Button(
+            Button(
                 onClick = {
-            isLoading = true
-            errorMessage = null
-            if (emailError == null && passwordError == null && email.isNotBlank() && password.isNotBlank()) {
-                // First verify against Firestore User table
-                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                db.collection("User")
-                    .whereEqualTo("email", email)
-                    .whereEqualTo("password", password)
-                    .limit(1)
-                    .get()
-                    .addOnSuccessListener { snapshot ->
-                        if (!snapshot.isEmpty) {
-                            val doc = snapshot.documents.first()
-                            val docId = doc.id
-                            val userId = doc.getString("userId") ?: docId
-                            val name = doc.getString("name") ?: ""
-                            val userEmail = doc.getString("email") ?: email
-                            
-                            // Try to sign in to Firebase Auth for Storage access
-                            auth.signInWithEmailAndPassword(email, password)
-                                .addOnSuccessListener { authResult: AuthResult ->
-                                    val firebaseUser = authResult.user
-                                    android.util.Log.d("Login", "Successfully signed in to Firebase Auth: ${firebaseUser?.uid}")
-                                    
-                                    // Store session data
-                                    val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
+                    viewModel.login(
+                        onSuccess = { docId, userId ->
+                            // Persist session
+                            val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
+                            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            db.collection("User").document(docId).get()
+                                .addOnSuccessListener { doc ->
+                                    val name = doc.getString("name") ?: ""
+                                    val userEmail = doc.getString("email") ?: uiState.email
                                     val editor = prefs.edit()
                                     editor.putString("docId", docId)
                                     editor.putString("userId", userId)
                                     editor.putString("name", name)
                                     editor.putString("email", userEmail)
+                                    editor.putBoolean("isAdmin", false)
                                     editor.apply()
-                                    
-                                    // Mark user as logged in in Firestore
-                                    db.collection("User").document(docId).update("login", true)
-                                    isLoading = false
                                     onLoginSuccess()
                                 }
-                                .addOnFailureListener { authError: Exception ->
-                                    // If Firebase Auth fails, create a new Firebase Auth user
-                                    android.util.Log.d("Login", "Firebase Auth sign-in failed, creating new user: ${authError.localizedMessage}")
-                                    auth.createUserWithEmailAndPassword(email, password)
-                                        .addOnSuccessListener { authResult: AuthResult ->
-                                            val firebaseUser = authResult.user
-                                            android.util.Log.d("Login", "Successfully created Firebase Auth user: ${firebaseUser?.uid}")
-                                            
-                                            // Update Firestore with the new Firebase Auth UID
-                                            db.collection("User").document(docId)
-                                                .update("userId", firebaseUser?.uid ?: userId)
-                                                .addOnSuccessListener {
-                                                    // Store session data
-                                                    val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
-                                                    val editor = prefs.edit()
-                                                    editor.putString("docId", docId)
-                                                    editor.putString("userId", firebaseUser?.uid ?: userId)
-                                                    editor.putString("name", name)
-                                                    editor.putString("email", userEmail)
-                                                    editor.apply()
-                                                    
-                                                    // Mark user as logged in in Firestore
-                                                    db.collection("User").document(docId).update("login", true)
-                                                    isLoading = false
-                                                    onLoginSuccess()
-                                                }
-                                                .addOnFailureListener { updateError ->
-                                                    isLoading = false
-                                                    errorMessage = "Failed to update user ID: ${updateError.localizedMessage}"
-                                                }
-                                        }
-                                        .addOnFailureListener { createError: Exception ->
-                                            isLoading = false
-                                            errorMessage = "Failed to create Firebase Auth user: ${createError.localizedMessage}"
-                                        }
-                                }
-                        } else {
-                            isLoading = false
-                            errorMessage = "Invalid email or password"
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        isLoading = false
-                        errorMessage = e.localizedMessage ?: "Login failed"
-                    }
-            } else {
-                isLoading = false
-                errorMessage = "Please fix the errors above"
-            }
+                        },
+                        onFailure = {}
+                    )
                 },
                 modifier = Modifier
                     .width(209.dp)
                     .height(72.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (!isLoading && emailError == null && passwordError == null)
+                    containerColor = if (!uiState.isLoading && uiState.emailError == null && uiState.passwordError == null)
                         colorResource(id = R.color.green_primary)
                     else
                         Color.Gray
                 ),
                 shape = RoundedCornerShape(10.dp),
-                enabled = !isLoading
-                        && email.isNotBlank()
-                        && password.isNotBlank()
-                        && emailError == null
-                        && passwordError == null
+                enabled = !uiState.isLoading
+                        && uiState.email.isNotBlank()
+                        && uiState.password.isNotBlank()
+                        && uiState.emailError == null
+                        && uiState.passwordError == null
             ) {
-                if (isLoading) {
+                if (uiState.isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         color = Color.White

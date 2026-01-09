@@ -23,271 +23,71 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.firstaid.R
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBarWithBack
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.launch
-import android.content.SharedPreferences
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-private data class Question(
-    val id: String,
-    val questionId: String,
-    val examId: String,
-    val questionText: String,
-    val options: List<String>,
-    val correctAnswer: String
-)
+import com.example.firstaid.model.building.Question
+import com.example.firstaid.viewmodel.building.ExamDetailsViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun ExamDetailsPage(
     examId: String,
     onBackClick: () -> Unit = {},
     onSelectBottom: (BottomItem) -> Unit = {},
-    onSubmitClick: () -> Unit = {}
+    onSubmitClick: () -> Unit = {},
+    viewModel: ExamDetailsViewModel? = null
 ) {
-    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val context = LocalContext.current
-    val sharedPreferences = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
-    val currentUserId = sharedPreferences.getString("userId", null)
-    val coroutineScope = rememberCoroutineScope()
-    val db = FirebaseFirestore.getInstance()
-
-    // Function to award badge when user passes exam
-    fun awardBadgeForExam(examId: String, userId: String) {
-        android.util.Log.d("BadgeAward", "=== STARTING BADGE AWARD PROCESS ===")
-        android.util.Log.d("BadgeAward", "Attempting to award badge for examId: $examId, userId: $userId")
-        if (userId.isNotEmpty()) {
-            // First, get the firstAidId from the exam
-            android.util.Log.d("BadgeAward", "Looking up exam with examId: $examId")
-            db.collection("Exam")
-                .whereEqualTo("examId", examId)
-                .get()
-                .addOnSuccessListener { examDocs ->
-                    android.util.Log.d("BadgeAward", "Exam query returned ${examDocs.documents.size} documents")
-                    if (!examDocs.isEmpty) {
-                        val examDoc = examDocs.documents[0]
-                        val firstAidId = examDoc.getString("firstAidId")
-                        android.util.Log.d("BadgeAward", "Found firstAidId: $firstAidId for examId: $examId")
-                        
-                        if (firstAidId != null) {
-                            // Find the badge associated with this firstAidId
-                            android.util.Log.d("BadgeAward", "Looking up badge with firstAidId: $firstAidId")
-                            db.collection("Badge")
-                                .whereEqualTo("firstAidId", firstAidId)
-                                .get()
-                                .addOnSuccessListener { badgeDocuments ->
-                                    android.util.Log.d("BadgeAward", "Badge query returned ${badgeDocuments.documents.size} documents")
-                                    if (!badgeDocuments.isEmpty) {
-                                        val badgeDoc = badgeDocuments.documents[0]
-                                        val badgeId = badgeDoc.getString("badgeId") ?: badgeDoc.id
-                                        android.util.Log.d("BadgeAward", "Found badge: $badgeId for firstAidId: $firstAidId")
-                                        
-                                        // Check if user already has this badge
-                                        db.collection("User_Badge")
-                                            .whereEqualTo("userId", userId)
-                                            .whereEqualTo("badgeId", badgeId)
-                                            .get()
-                                            .addOnSuccessListener { existingBadges ->
-                                                if (existingBadges.isEmpty) {
-                                                    // Award the badge
-                                                    android.util.Log.d("BadgeAward", "User doesn't have this badge yet, creating User_Badge record...")
-                                                    val userBadgeData = hashMapOf(
-                                                        "userId" to userId,
-                                                        "badgeId" to badgeId,
-                                                        "earnedDate" to com.google.firebase.Timestamp.now(),
-                                                        "examId" to examId,
-                                                        "firstAidId" to firstAidId
-                                                    )
-                                                    
-                                                    android.util.Log.d("BadgeAward", "User_Badge data: $userBadgeData")
-                                                    
-                                                    db.collection("User_Badge")
-                                                        .add(userBadgeData)
-                                                        .addOnSuccessListener { docRef ->
-                                                            android.util.Log.d("BadgeAward", "=== BADGE AWARDED SUCCESSFULLY ===")
-                                                            android.util.Log.d("BadgeAward", "Badge awarded successfully: $badgeId")
-                                                            android.util.Log.d("BadgeAward", "Document ID: ${docRef.id}")
-                                                        }
-                                                        .addOnFailureListener { e ->
-                                                            android.util.Log.e("BadgeAward", "=== FAILED TO AWARD BADGE ===")
-                                                            android.util.Log.e("BadgeAward", "Failed to award badge: ${e.localizedMessage}")
-                                                            android.util.Log.e("BadgeAward", "Error: ${e.message}")
-                                                        }
-                                                } else {
-                                                    android.util.Log.d("BadgeAward", "User already has this badge: $badgeId")
-                                                }
-                                            }
-                                            .addOnFailureListener { e ->
-                                                android.util.Log.e("BadgeAward", "Failed to check existing badges: ${e.localizedMessage}")
-                                            }
-                                    } else {
-                                        android.util.Log.d("BadgeAward", "No badge found for firstAidId: $firstAidId")
-                                    }
-                                }
-                                .addOnFailureListener { e ->
-                                    android.util.Log.e("BadgeAward", "Failed to find badge for firstAidId: ${e.localizedMessage}")
-                                }
-                        } else {
-                            android.util.Log.d("BadgeAward", "No firstAidId found for exam: $examId")
-                        }
-                    } else {
-                        android.util.Log.d("BadgeAward", "No exam found with examId: $examId")
-                    }
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("BadgeAward", "Failed to find exam: ${e.localizedMessage}")
-                }
-        }
-    }
-
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var firstAidTitle by remember { mutableStateOf("") }
-    var questions by remember { mutableStateOf<List<Question>>(emptyList()) }
-    var selectedAnswers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var shuffledQuestions by remember { mutableStateOf<List<Question>>(emptyList()) }
-    var isAlreadyPassed by remember { mutableStateOf(false) }
-    var showSuccessMessage by remember { mutableStateOf(false) }
-    var showTryAgainMessage by remember { mutableStateOf(false) }
-
-    // Fetch Exam data and related questions
-    LaunchedEffect(examId) {
-        try {
-            if (examId.isBlank()) {
-                errorMessage = "Invalid Exam ID: empty"
-                isLoading = false
-                return@LaunchedEffect
+    val sharedPreferences = remember { context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE) }
+    val currentUserId = remember { sharedPreferences.getString("userId", null) }
+    
+    val actualViewModel: ExamDetailsViewModel = viewModel ?: androidx.lifecycle.viewmodel.compose.viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                return ExamDetailsViewModel(examId, currentUserId) as T
             }
+        }
+    )
+    
+    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
+    val uiState by actualViewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
 
-            // Debug logging
-            android.util.Log.d("ExamDetails", "Fetching exam data for examId: $examId")
-            
-            // Get Exam data
-            db.collection("Exam")
-                .whereEqualTo("examId", examId)
-                .get()
-                .addOnSuccessListener { examDocs ->
-                    android.util.Log.d("ExamDetails", "Found ${examDocs.documents.size} exam documents")
-                    if (examDocs.documents.isNotEmpty()) {
-                        val examDoc = examDocs.documents.first()
-                        val firstAidId = examDoc.getString("firstAidId") ?: ""
-
-                        // Get First_Aid title
-                        db.collection("First_Aid")
-                            .whereEqualTo("firstAidId", firstAidId)
-                            .get()
-                            .addOnSuccessListener { firstAidDocs ->
-                                if (firstAidDocs.documents.isNotEmpty()) {
-                                    val firstAidDoc = firstAidDocs.documents.first()
-                                    firstAidTitle = firstAidDoc.getString("title") ?: ""
-                                }
-                            }
-
-                        // Get Questions for this exam
-                        android.util.Log.d("ExamDetails", "Fetching questions for examId: $examId")
-                        db.collection("Question")
-                            .whereEqualTo("examId", examId)
-                            .get()
-                            .addOnSuccessListener { questionDocs ->
-                                android.util.Log.d("ExamDetails", "Found ${questionDocs.documents.size} question documents")
-                                val questionList = questionDocs.documents.mapNotNull { doc ->
-                                    val otherOptions = doc.get("otherOptions") as? List<String> ?: emptyList()
-                                    val correctAnswer = doc.getString("correctAnswer") ?: ""
-                                    
-                                    // Combine otherOptions and correctAnswer into a single options list
-                                    val allOptions = (otherOptions + correctAnswer).shuffled()
-                                    
-                                    Question(
-                                        id = doc.id,
-                                        questionId = doc.getString("questionId") ?: "",
-                                        examId = doc.getString("examId") ?: "",
-                                        questionText = doc.getString("question") ?: "",
-                                        options = allOptions,
-                                        correctAnswer = correctAnswer
-                                    )
-                                }
-
-                                questions = questionList
-                                // Shuffle the order of questions
-                                shuffledQuestions = questionList.shuffled()
-                                
-                                // Debug logging
-                                android.util.Log.d("ExamDetails", "Loaded ${questionList.size} questions for exam $examId")
-                                questionList.forEachIndexed { index, question ->
-                                    android.util.Log.d("ExamDetails", "Question $index: ${question.questionText}")
-                                    android.util.Log.d("ExamDetails", "Options: ${question.options}")
-                                }
-                                
-                                // Check exam progress status
-                                if (currentUserId != null) {
-                                    db.collection("Exam_Progress")
-                                        .whereEqualTo("userId", currentUserId)
-                                        .whereEqualTo("examId", examId)
-                                        .get()
-                                        .addOnSuccessListener { progressDocs ->
-                                            if (progressDocs.documents.isNotEmpty()) {
-                                                val progressDoc = progressDocs.documents.first()
-                                                val currentStatus = progressDoc.getString("status") ?: "Pending"
-                                                isAlreadyPassed = currentStatus == "Passed"
-                                                android.util.Log.d("ExamDetails", "Exam progress status: $currentStatus, isAlreadyPassed: $isAlreadyPassed")
-                                            }
-                                        }
-                                        .addOnFailureListener { e ->
-                                            android.util.Log.e("ExamDetails", "Failed to fetch exam progress: ${e.localizedMessage}")
-                                        }
-                                }
-                                
-                                isLoading = false
-                            }
-                            .addOnFailureListener { e ->
-                                errorMessage = e.localizedMessage ?: "Failed to load questions"
-                                isLoading = false
-                            }
-                    } else {
-                        errorMessage = "No exam data found"
-                        isLoading = false
-                    }
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load exam data"
-                    isLoading = false
-                }
-        } catch (e: Exception) {
-            errorMessage = e.localizedMessage ?: "Failed to load data"
-            isLoading = false
+    // Handle success message navigation
+    LaunchedEffect(uiState.showSuccessMessage) {
+        if (uiState.showSuccessMessage) {
+            delay(1000)
+            actualViewModel.dismissSuccessMessage()
+            onSubmitClick()
         }
     }
-
-    // Check if all questions are answered
-    val allQuestionsAnswered = shuffledQuestions.isNotEmpty() && 
-        shuffledQuestions.all { question -> selectedAnswers.containsKey(question.questionId) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Top Bar with back button
             TopBarWithBack(
-                title = firstAidTitle.ifEmpty { "Exam" },
+                title = uiState.firstAidTitle.ifEmpty { "Exam" },
                 onBackClick = onBackClick
             )
 
-            if (isLoading) {
+            if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = colorResource(id = R.color.green_primary))
                 }
-            } else if (errorMessage != null) {
+            } else if (uiState.errorMessage != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = errorMessage ?: "",
+                        text = uiState.errorMessage ?: "",
                         color = Color.Red,
                         fontSize = 16.sp
                     )
                 }
-            } else if (shuffledQuestions.isNotEmpty()) {
+            } else if (uiState.shuffledQuestions.isNotEmpty()) {
                 // Scrollable exam content
                 Column(
                     modifier = Modifier
@@ -296,106 +96,31 @@ fun ExamDetailsPage(
                         .padding(bottom = 100.dp) // Space for bottom bar
                 ) {
                     // Questions
-                    shuffledQuestions.forEachIndexed { questionIndex, question ->
+                    uiState.shuffledQuestions.forEachIndexed { questionIndex, question ->
                         QuestionCard(
                             question = question,
                             questionNumber = questionIndex + 1,
-                            selectedAnswer = selectedAnswers[question.questionId],
+                            selectedAnswer = uiState.selectedAnswers[question.questionId],
                             onAnswerSelected = { answer ->
-                                selectedAnswers = selectedAnswers + (question.questionId to answer)
+                                actualViewModel.onAnswerSelected(question.questionId, answer)
                             },
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
                         )
                     }
 
                     // Submit Button - Only show if not already passed
-                    if (!isAlreadyPassed) {
+                    if (!uiState.isAlreadyPassed) {
                         Spacer(modifier = Modifier.height(24.dp))
                         Button(
                             onClick = {
-                                // Calculate score and update exam progress
-                                if (currentUserId != null) {
-                                    var correctAnswers = 0
-                                    val totalQuestions = shuffledQuestions.size
-                                    
-                                    android.util.Log.d("ExamDetails", "Starting exam submission - UserId: $currentUserId, ExamId: $examId")
-                                    android.util.Log.d("ExamDetails", "Total questions: $totalQuestions")
-                                    android.util.Log.d("ExamDetails", "Selected answers: $selectedAnswers")
-                                    
-                                    shuffledQuestions.forEach { question ->
-                                        val selectedAnswer = selectedAnswers[question.questionId]
-                                        val isCorrect = selectedAnswer == question.correctAnswer
-                                        android.util.Log.d("ExamDetails", "Question: ${question.questionText}")
-                                        android.util.Log.d("ExamDetails", "Selected: $selectedAnswer, Correct: ${question.correctAnswer}, IsCorrect: $isCorrect")
-                                        
-                                        if (isCorrect) {
-                                            correctAnswers++
-                                        }
-                                    }
-                                    
-                                    val score = if (totalQuestions > 0) (correctAnswers * 100) / totalQuestions else 0
-                                    val newStatus = if (correctAnswers == totalQuestions) "Passed" else "Taken"
-                                    
-                                    android.util.Log.d("ExamDetails", "Exam results - Correct: $correctAnswers/$totalQuestions, Score: $score%, Status: $newStatus")
-                                    
-                                    db.collection("Exam_Progress")
-                                        .whereEqualTo("userId", currentUserId)
-                                        .whereEqualTo("examId", examId)
-                                        .get()
-                                        .addOnSuccessListener { progressDocs ->
-                                            android.util.Log.d("ExamDetails", "Found ${progressDocs.documents.size} exam progress documents")
-                                            if (progressDocs.documents.isNotEmpty()) {
-                                                val progressDoc = progressDocs.documents.first()
-                                                android.util.Log.d("ExamDetails", "Updating exam progress document: ${progressDoc.id}")
-                                                progressDoc.reference.update(
-                                                    "status", newStatus,
-                                                    "score", score
-                                                )
-                                                    .addOnSuccessListener {
-                                                        android.util.Log.d("ExamDetails", "Exam progress updated successfully - Status: $newStatus, Score: $score")
-                                                        isAlreadyPassed = newStatus == "Passed"
-
-                                                        if (newStatus == "Passed") {
-                                                            // Award badge if exam is passed
-                                                            if (currentUserId != null) {
-                                                                android.util.Log.d("BadgeAward", "Exam passed! Awarding badge for examId: $examId")
-                                                                awardBadgeForExam(examId, currentUserId)
-                                                            } else {
-                                                                android.util.Log.d("BadgeAward", "No userId, skipping badge award")
-                                                            }
-
-                                                            showSuccessMessage = true
-                                                            // Show success message for 1 second, then navigate
-                                                            coroutineScope.launch {
-                                                                kotlinx.coroutines.delay(1000)
-                                                                showSuccessMessage = false
-                                                                onSubmitClick()
-                                                            }
-                                                        } else {
-                                                            // Not all correct – show overlay message
-                                                            showTryAgainMessage = true
-                                                        }
-                                                    }
-                                                    .addOnFailureListener { e ->
-                                                        android.util.Log.e("ExamDetails", "Failed to update exam progress: ${e.localizedMessage}")
-                                                    }
-                                            } else {
-                                                android.util.Log.e("ExamDetails", "No exam progress document found for userId: $currentUserId, examId: $examId")
-                                            }
-                                        }
-                                        .addOnFailureListener { e ->
-                                            android.util.Log.e("ExamDetails", "Failed to fetch exam progress: ${e.localizedMessage}")
-                                        }
-                                } else {
-                                    android.util.Log.e("ExamDetails", "No current user ID found")
-                                }
+                                actualViewModel.submitExam(onSubmitClick)
                             },
-                            enabled = allQuestionsAnswered,
+                            enabled = uiState.allQuestionsAnswered,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp)
                                 .height(50.dp)
-                                .then(if (allQuestionsAnswered) Modifier.shadow(4.dp, RoundedCornerShape(10.dp)) else Modifier),
+                                .then(if (uiState.allQuestionsAnswered) Modifier.shadow(4.dp, RoundedCornerShape(10.dp)) else Modifier),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = colorResource(id = R.color.green_primary),
                                 contentColor = Color.White,
@@ -412,7 +137,7 @@ fun ExamDetailsPage(
                         }
                         
                         // Success message
-                        if (showSuccessMessage) {
+                        if (uiState.showSuccessMessage) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Card(
                                 modifier = Modifier
@@ -497,8 +222,8 @@ fun ExamDetailsPage(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
         
-        // Try again overlay message for non-perfect score - positioned absolutely at top level
-        if (showTryAgainMessage) {
+        // Try again overlay message for non-perfect score
+        if (uiState.showTryAgainMessage) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -536,7 +261,7 @@ fun ExamDetailsPage(
                         Spacer(modifier = Modifier.height(20.dp))
                         Button(
                             onClick = {
-                                showTryAgainMessage = false
+                                actualViewModel.dismissTryAgainMessage()
                                 onBackClick()
                             },
                             colors = ButtonDefaults.buttonColors(

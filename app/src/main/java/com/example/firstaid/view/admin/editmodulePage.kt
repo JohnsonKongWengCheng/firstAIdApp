@@ -136,6 +136,7 @@ fun EditModulePage(
     var topicExpanded by remember { mutableStateOf(false) }
     var noTopicsAvailable by remember { mutableStateOf(false) }
     var moduleDescription by remember { mutableStateOf(TextFieldValue("")) }
+    var originalModuleDescription by remember { mutableStateOf(TextFieldValue("")) }
 
     // Steps
     var steps by remember { mutableStateOf<List<EditableStep>>(emptyList()) }
@@ -212,6 +213,7 @@ fun EditModulePage(
         steps = emptyList()
         originalSteps = emptyList()
         moduleDescription = TextFieldValue("")
+        originalModuleDescription = TextFieldValue("")
         val mod = selectedModule ?: return@LaunchedEffect
         
         // Load Learning document to get description
@@ -221,6 +223,7 @@ fun EditModulePage(
                     val learningDoc = learningDocs.documents.first()
                     val description = learningDoc.getString("description") ?: ""
                     moduleDescription = TextFieldValue(description)
+                    originalModuleDescription = TextFieldValue(description)
                 }
             }
         
@@ -264,6 +267,24 @@ fun EditModulePage(
     fun getRemovedSteps(): List<EditableStep> {
         val currentStepIds = steps.mapNotNull { it.id }.toSet()
         return originalSteps.filter { it.id != null && !currentStepIds.contains(it.id) }
+    }
+
+    // Check if any changes were made to description or steps
+    fun hasChanges(): Boolean {
+        // Description changed
+        if (moduleDescription.text.trim() != originalModuleDescription.text.trim()) return true
+
+        // Steps count changed
+        if (steps.size != originalSteps.size) return true
+
+        // Compare each step's core fields
+        return steps.zip(originalSteps).any { (current, original) ->
+            current.title.text.trim() != original.title.text.trim() ||
+            current.content.text.trim() != original.content.text.trim() ||
+            current.description.text.trim() != original.description.text.trim() ||
+            (current.imageUrl ?: "") != (original.imageUrl ?: "") ||
+            (current.imageUri != null) // any newly selected local image counts as a change
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -354,24 +375,36 @@ fun EditModulePage(
 
                     // Module (auto-selected): show read-only field
                     if (selectedModule != null) {
-                        // Module Description field
+                    // Module Description field
                         Text(text = "Module Description", fontSize = 16.sp, color = Color.Black, fontFamily = cabin)
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = moduleDescription,
-                            onValueChange = { moduleDescription = it },
-                            placeholder = { Text("Enter module description", color = Color(0xFFAAAAAA)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
-                                unfocusedContainerColor = Color(0xFFECF0EC),
-                                focusedContainerColor = Color(0xFFE6F3E6)
-                            )
+                    val isDescriptionWhitespace =
+                        moduleDescription.text.isNotEmpty() && moduleDescription.text.isBlank()
+                    OutlinedTextField(
+                        value = moduleDescription,
+                        onValueChange = { moduleDescription = it },
+                        placeholder = { Text("Enter module description", color = Color(0xFFAAAAAA)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = isDescriptionWhitespace,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = if (isDescriptionWhitespace) Color.Red else Color.Transparent,
+                            focusedBorderColor = if (isDescriptionWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedContainerColor = Color(0xFFECF0EC),
+                            focusedContainerColor = Color(0xFFE6F3E6)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                    )
+                    if (isDescriptionWhitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Module Description should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            fontFamily = cabin
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     }
 
                     // Steps editor (once module selected)
@@ -407,56 +440,92 @@ fun EditModulePage(
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(text = "Title:", fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.height(8.dp))
+                            val titleWhitespace = step.title.text.isNotEmpty() && step.title.text.isBlank()
                             OutlinedTextField(
                                 value = step.title,
                                 onValueChange = { steps = steps.toMutableList().apply { this[index] = this[index].copy(title = it) } },
                                 placeholder = { Text("Enter step title", color = Color(0xFFAAAAAA)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
+                                isError = titleWhitespace,
                                 shape = RoundedCornerShape(10.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                    unfocusedBorderColor = if (titleWhitespace) Color.Red else Color.Transparent,
+                                    focusedBorderColor = if (titleWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                    errorBorderColor = Color.Red,
                                     unfocusedContainerColor = Color(0xFFECF0EC),
                                     focusedContainerColor = Color(0xFFE6F3E6)
                                 )
                             )
+                            if (titleWhitespace) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Title should not be empty",
+                                    color = Color.Red,
+                                    fontSize = 12.sp,
+                                    fontFamily = cabin
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(text = "Content:", fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.height(8.dp))
+                            val contentWhitespace = step.content.text.isNotEmpty() && step.content.text.isBlank()
                             OutlinedTextField(
                                 value = step.content,
                                 onValueChange = { steps = steps.toMutableList().apply { this[index] = this[index].copy(content = it) } },
                                 placeholder = { Text("Enter step content", color = Color(0xFFAAAAAA)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
+                                isError = contentWhitespace,
                                 shape = RoundedCornerShape(10.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                    unfocusedBorderColor = if (contentWhitespace) Color.Red else Color.Transparent,
+                                    focusedBorderColor = if (contentWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                    errorBorderColor = Color.Red,
                                     unfocusedContainerColor = Color(0xFFECF0EC),
                                     focusedContainerColor = Color(0xFFE6F3E6)
                                 )
                             )
+                            if (contentWhitespace) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Content should not be empty",
+                                    color = Color.Red,
+                                    fontSize = 12.sp,
+                                    fontFamily = cabin
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(text = "Description:", fontSize = 16.sp, color = Color.Black)
                             Spacer(modifier = Modifier.height(8.dp))
+                            val descriptionWhitespace = step.description.text.isNotEmpty() && step.description.text.isBlank()
                             OutlinedTextField(
                                 value = step.description,
                                 onValueChange = { steps = steps.toMutableList().apply { this[index] = this[index].copy(description = it) } },
                                 placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
+                                isError = descriptionWhitespace,
                                 shape = RoundedCornerShape(10.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                    unfocusedBorderColor = if (descriptionWhitespace) Color.Red else Color.Transparent,
+                                    focusedBorderColor = if (descriptionWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                    errorBorderColor = Color.Red,
                                     unfocusedContainerColor = Color(0xFFECF0EC),
                                     focusedContainerColor = Color(0xFFE6F3E6)
                                 )
                             )
+                            if (descriptionWhitespace) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Description should not be empty",
+                                    color = Color.Red,
+                                    fontSize = 12.sp,
+                                    fontFamily = cabin
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(text = "Image:", fontSize = 16.sp, color = Color.Black)
@@ -634,8 +703,8 @@ fun EditModulePage(
                         }
                     }
                 },
-                enabled = !isSaving && selectedModule != null && !noTopicsAvailable && 
-                    moduleDescription.text.isNotBlank() && areAllStepsValid(),
+                enabled = !isSaving && selectedModule != null && !noTopicsAvailable &&
+                    moduleDescription.text.isNotBlank() && areAllStepsValid() && hasChanges(),
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()

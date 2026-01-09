@@ -4,12 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,281 +15,54 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.firstaid.R
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBar
-import com.google.firebase.firestore.FirebaseFirestore
-
+import com.example.firstaid.viewmodel.building.LearnExamPageViewModel
 
 @Composable
 fun LearnExamPage(
     onSelectBottom: (BottomItem) -> Unit = {},
     onLearnTopicClick: (String) -> Unit = {},
-    onExamTopicClick: (String) -> Unit = {}
+    onExamTopicClick: (String) -> Unit = {},
+    viewModel: LearnExamPageViewModel? = null
 ) {
-    var refreshTrigger by remember { mutableStateOf(0) }
-    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE) }
+    val currentUserId = remember { prefs.getString("userId", null) }
     
-    var selectedTab by remember { mutableStateOf("Learn") }
-    var learnTopics by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
-    var examTopics by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var firstAidTitles by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var learningProgress by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var examProgress by remember { mutableStateOf<Map<String, Map<String, Any>>>(emptyMap()) }
-    var learnLoaded by remember { mutableStateOf(false) }
-    var examLoaded by remember { mutableStateOf(false) }
-    var titlesLoaded by remember { mutableStateOf(false) }
-    var progressLoaded by remember { mutableStateOf(false) }
-    var examProgressLoaded by remember { mutableStateOf(false) }
+    val actualViewModel: LearnExamPageViewModel = viewModel ?: androidx.lifecycle.viewmodel.compose.viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                return LearnExamPageViewModel(currentUserId) as T
+            }
+        }
+    )
+    
+    val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
+    val uiState by actualViewModel.uiState.collectAsState()
+
     var showUnavailableMessage by remember { mutableStateOf(false) }
     var unavailableExamTitle by remember { mutableStateOf("") }
-    
-    val db = FirebaseFirestore.getInstance()
-    
-    // Get current user ID from SharedPreferences
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
-    val currentUserId = prefs.getString("userId", null)
-    
-    android.util.Log.d("LearnExamPage", "Current userId from SharedPreferences: $currentUserId")
 
-    // Fetch First_Aid titles, Learning and Exam data from Firebase
+    // Refresh progress when page becomes visible
     LaunchedEffect(Unit) {
-        try {
-            // First_Aid titles
-            db.collection("First_Aid")
-                .get()
-                .addOnSuccessListener { docs ->
-                    val map = docs.associate { d ->
-                        val id = d.getString("firstAidId") ?: d.id
-                        val title = d.getString("title") ?: ""
-                        id to title
-                    }
-                    firstAidTitles = map
-                    titlesLoaded = true
-                    if (learnLoaded && examLoaded) isLoading = false
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load first aid titles"
-                    isLoading = false
-                }
+        actualViewModel.refreshProgress()
+    }
 
-            // Learning
-            db.collection("Learning")
-                .get()
-                .addOnSuccessListener { learningDocs ->
-                    val learnings = learningDocs.mapNotNull { doc ->
-                        mapOf(
-                            "learningId" to (doc.getString("learningId") ?: doc.id),
-                            "firstAidId" to (doc.getString("firstAidId") ?: ""),
-                            "isCompleted" to false
-                        )
-                    }
-                    learnTopics = learnings
-                    learnLoaded = true
-                    if (titlesLoaded && examLoaded) isLoading = false
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load learning topics"
-                    isLoading = false
-                }
-
-            // Exam
-            db.collection("Exam")
-                .get()
-                .addOnSuccessListener { examDocs ->
-                    val allExams = examDocs.mapNotNull { doc ->
-                        mapOf(
-                            "examId" to (doc.getString("examId") ?: doc.id),
-                            "description" to (doc.getString("description") ?: ""),
-                            "firstAidId" to (doc.getString("firstAidId") ?: "")
-                        )
-                    }
-                    
-                    // Filter exams that have questions
-                    if (allExams.isNotEmpty()) {
-                        val examIds = allExams.map { it["examId"] as String }
-                        android.util.Log.d("LearnExamPage", "Checking questions for ${examIds.size} exams: $examIds")
-                        db.collection("Question")
-                            .whereIn("examId", examIds)
-                            .get()
-                            .addOnSuccessListener { questionDocs ->
-                                val examsWithQuestions = questionDocs.documents.mapNotNull { doc ->
-                                    doc.getString("examId")
-                                }.toSet()
-                                android.util.Log.d("LearnExamPage", "Found questions for exams: $examsWithQuestions")
-                                
-                                examTopics = allExams.filter { exam ->
-                                    val hasQuestions = examsWithQuestions.contains(exam["examId"])
-                                    android.util.Log.d("LearnExamPage", "Exam ${exam["examId"]} has questions: $hasQuestions")
-                                    hasQuestions
-                                }
-                                android.util.Log.d("LearnExamPage", "Filtered to ${examTopics.size} exams with questions")
-                                examLoaded = true
-                                if (titlesLoaded && learnLoaded) isLoading = false
-                            }
-                            .addOnFailureListener { e ->
-                                // If question query fails, show all exams (fallback)
-                                examTopics = allExams
-                                examLoaded = true
-                                if (titlesLoaded && learnLoaded) isLoading = false
-                            }
-                    } else {
-                        examTopics = allExams
-                        examLoaded = true
-                        if (titlesLoaded && learnLoaded) isLoading = false
-                    }
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load exams"
-                    isLoading = false
-                }
-
-            // Fetch Learning Progress for current user
-            if (currentUserId != null) {
-                android.util.Log.d("LearnExamPage", "Fetching learning progress for userId: $currentUserId")
-                db.collection("Learning_Progress")
-                    .whereEqualTo("userId", currentUserId)
-                    .get()
-                    .addOnSuccessListener { progressDocs ->
-                        android.util.Log.d("LearnExamPage", "Found ${progressDocs.documents.size} progress documents")
-                        val progressMap = progressDocs.documents.associate { doc ->
-                            val learningId = doc.getString("learningId") ?: ""
-                            val status = doc.getString("status") ?: "Pending"
-                            android.util.Log.d("LearnExamPage", "Progress - learningId: $learningId, status: $status")
-                            learningId to status
-                        }
-                        learningProgress = progressMap
-                        android.util.Log.d("LearnExamPage", "Learning progress map: $learningProgress")
-                        progressLoaded = true
-                        if (titlesLoaded && learnLoaded && examLoaded) isLoading = false
-                    }
-                    .addOnFailureListener { e ->
-                        android.util.Log.e("LearnExamPage", "Failed to load learning progress: ${e.localizedMessage}")
-                        progressLoaded = true
-                        if (titlesLoaded && learnLoaded && examLoaded) isLoading = false
-                    }
-            } else {
-                android.util.Log.w("LearnExamPage", "No current user ID found")
-                progressLoaded = true
-                if (titlesLoaded && learnLoaded && examLoaded) isLoading = false
-            }
-
-            // Fetch Exam Progress for current user
-            if (currentUserId != null) {
-                android.util.Log.d("LearnExamPage", "Fetching exam progress for userId: $currentUserId")
-                db.collection("Exam_Progress")
-                    .whereEqualTo("userId", currentUserId)
-                    .get()
-                    .addOnSuccessListener { progressDocs ->
-                        android.util.Log.d("LearnExamPage", "Found ${progressDocs.documents.size} exam progress documents")
-                        val progressMap = progressDocs.documents.associate { doc ->
-                            val examId = doc.getString("examId") ?: ""
-                            val status = doc.getString("status") ?: "Pending"
-                            val score = doc.getLong("score")?.toInt() ?: 0
-                            examId to mapOf(
-                                "status" to status,
-                                "score" to score
-                            )
-                        }
-                        examProgress = progressMap
-                        android.util.Log.d("LearnExamPage", "Exam progress map: $examProgress")
-                        examProgressLoaded = true
-                        if (titlesLoaded && learnLoaded && examLoaded && progressLoaded) isLoading = false
-                    }
-                    .addOnFailureListener { e ->
-                        android.util.Log.e("LearnExamPage", "Failed to load exam progress: ${e.localizedMessage}")
-                        examProgressLoaded = true
-                        if (titlesLoaded && learnLoaded && examLoaded && progressLoaded) isLoading = false
-                    }
-            } else {
-                android.util.Log.w("LearnExamPage", "No current user ID found for exam progress")
-                examProgressLoaded = true
-                if (titlesLoaded && learnLoaded && examLoaded && progressLoaded) isLoading = false
-            }
-        } catch (e: Exception) {
-            errorMessage = e.localizedMessage ?: "Failed to load data"
-            isLoading = false
-        }
-    }
-    
-    // Refresh learning progress when page becomes visible again
-    LaunchedEffect(refreshTrigger) {
-        if (currentUserId != null && refreshTrigger > 0) {
-            android.util.Log.d("LearnExamPage", "Refreshing learning progress for userId: $currentUserId")
-            db.collection("Learning_Progress")
-                .whereEqualTo("userId", currentUserId)
-                .get()
-                .addOnSuccessListener { progressDocs ->
-                    android.util.Log.d("LearnExamPage", "Refreshed - Found ${progressDocs.documents.size} progress documents")
-                    val progressMap = progressDocs.documents.associate { doc ->
-                        val learningId = doc.getString("learningId") ?: ""
-                        val status = doc.getString("status") ?: "Pending"
-                        android.util.Log.d("LearnExamPage", "Refreshed - learningId: $learningId, status: $status")
-                        learningId to status
-                    }
-                    learningProgress = progressMap
-                    android.util.Log.d("LearnExamPage", "Refreshed learning progress map: $learningProgress")
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("LearnExamPage", "Failed to refresh learning progress: ${e.localizedMessage}")
-                }
-            
-            // Also refresh exam progress
-            android.util.Log.d("LearnExamPage", "Refreshing exam progress for userId: $currentUserId")
-            db.collection("Exam_Progress")
-                .whereEqualTo("userId", currentUserId)
-                .get()
-                .addOnSuccessListener { progressDocs ->
-                    android.util.Log.d("LearnExamPage", "Refreshed - Found ${progressDocs.documents.size} exam progress documents")
-                    val progressMap = progressDocs.documents.associate { doc ->
-                        val examId = doc.getString("examId") ?: ""
-                        val status = doc.getString("status") ?: "Pending"
-                        val score = doc.getLong("score")?.toInt() ?: 0
-                        android.util.Log.d("LearnExamPage", "Refreshed - examId: $examId, status: $status, score: $score")
-                        examId to mapOf(
-                            "status" to status,
-                            "score" to score
-                        )
-                    }
-                    examProgress = progressMap
-                    android.util.Log.d("LearnExamPage", "Refreshed exam progress map: $examProgress")
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("LearnExamPage", "Failed to refresh exam progress: ${e.localizedMessage}")
-                }
-        }
-    }
-    
-    // Add a simple refresh mechanism using DisposableEffect
-    DisposableEffect(Unit) {
-        onDispose {
-            // This will be called when the composable is disposed
-        }
-    }
-    
-    // Add a LaunchedEffect to refresh progress data periodically
-    LaunchedEffect(Unit) {
-        // Refresh progress data when the page is first loaded
-        refreshTrigger++
-    }
-    
-    // Add a LaunchedEffect that triggers when the page becomes visible
-    LaunchedEffect(Unit) {
-        // This will trigger a refresh when the composable is recomposed
-        refreshTrigger++
-    }
-    
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -302,19 +73,19 @@ fun LearnExamPage(
         ) {
             // Top Bar
             TopBar()
-            
+
             // Main Content
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 16.dp)
             ) {
-            Spacer(modifier = Modifier.height(29.dp))
+                Spacer(modifier = Modifier.height(29.dp))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 20.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -334,7 +105,7 @@ fun LearnExamPage(
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
-                
+
                 // Tab Section
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -343,13 +114,13 @@ fun LearnExamPage(
                     // Learn Tab
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable { selectedTab = "Learn" }
+                        modifier = Modifier.clickable { actualViewModel.onTabSelected("Learn") }
                     ) {
                         Text(
                             text = "Learn",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
+                            color = if (uiState.selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
                             fontFamily = cabin
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -358,22 +129,22 @@ fun LearnExamPage(
                                 .width(100.dp)
                                 .height(3.dp)
                                 .background(
-                                    if (selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color.Transparent,
+                                    if (uiState.selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color.Transparent,
                                     RoundedCornerShape(2.dp)
                                 )
                         )
                     }
-                    
+
                     // Exam Tab
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable { selectedTab = "Exam" }
+                        modifier = Modifier.clickable { actualViewModel.onTabSelected("Exam") }
                     ) {
                         Text(
                             text = "Exam",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
+                            color = if (uiState.selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
                             fontFamily = cabin
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -382,7 +153,7 @@ fun LearnExamPage(
                                 .width(100.dp)
                                 .height(3.dp)
                                 .background(
-                                    if (selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color.Transparent,
+                                    if (uiState.selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color.Transparent,
                                     RoundedCornerShape(2.dp)
                                 )
                         )
@@ -394,11 +165,11 @@ fun LearnExamPage(
                     thickness = 1.dp,
                     modifier = Modifier.padding(horizontal = 30.dp)
                 )
-                
+
                 Spacer(modifier = Modifier.height(35.dp))
-                
+
                 // Content based on selected tab
-                if (isLoading) {
+                if (uiState.isLoading) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -407,69 +178,44 @@ fun LearnExamPage(
                             color = colorResource(id = R.color.green_primary)
                         )
                     }
-                } else if (errorMessage != null) {
+                } else if (uiState.errorMessage != null) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = errorMessage ?: "An error occurred",
+                            text = uiState.errorMessage ?: "An error occurred",
                             color = Color.Red,
                             fontFamily = cabin
                         )
                     }
-                } else if (selectedTab == "Learn") {
-                    // Sort learnTopics by title to ensure alphabetical order (case-insensitive)
-                    val sortedLearnTopics = remember(learnTopics, firstAidTitles) {
-                        learnTopics.sortedBy { learning ->
-                            val firstAidId = learning["firstAidId"] as? String ?: ""
-                            val title = firstAidTitles[firstAidId] ?: firstAidId
-                            title.lowercase() // Case-insensitive sorting
-                        }
-                    }
-                    
+                } else if (uiState.selectedTab == "Learn") {
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(bottom = 20.dp)
                     ) {
-                        items(sortedLearnTopics) { learning ->
-                            val firstAidId = learning["firstAidId"] as? String ?: ""
-                            val learningId = learning["learningId"] as? String ?: ""
-                            val title = firstAidTitles[firstAidId] ?: firstAidId
-                            val status = learningProgress[learningId] ?: "Pending"
-                            val isCompleted = status == "Completed"
-                            android.util.Log.d("LearnExamPage", "Rendering card - learningId: $learningId, status: $status, isCompleted: $isCompleted")
+                        items(uiState.sortedLearnTopics) { learning ->
+                            val title = uiState.firstAidTitles[learning.firstAidId] ?: learning.firstAidId
                             LearnTopicCard(
                                 title = title,
-                                isCompleted = isCompleted,
-                                onClick = { onLearnTopicClick(learningId) },
+                                isCompleted = learning.isCompleted,
+                                onClick = { onLearnTopicClick(learning.learningId) },
                                 fontFamily = cabin
                             )
                         }
                     }
                 } else {
-                    // Sort examTopics by title to ensure alphabetical order (case-insensitive)
-                    val sortedExamTopics = remember(examTopics, firstAidTitles) {
-                        examTopics.sortedBy { exam ->
-                            val firstAidId = exam["firstAidId"] as? String ?: ""
-                            val title = firstAidTitles[firstAidId] ?: firstAidId
-                            title.lowercase() // Case-insensitive sorting
-                        }
-                    }
-                    
                     // Filter exams to only show those with learning modules
-                    val examsWithLearning = remember(sortedExamTopics, learnTopics) {
-                        sortedExamTopics.filter { exam ->
-                            val firstAidId = exam["firstAidId"] as? String ?: ""
-                            val matchingLearning = learnTopics.find { learning ->
-                                (learning["firstAidId"] as? String) == firstAidId
+                    val examsWithLearning = remember(uiState.sortedExamTopics, uiState.sortedLearnTopics) {
+                        uiState.sortedExamTopics.filter { exam ->
+                            uiState.sortedLearnTopics.any { learning ->
+                                learning.firstAidId == exam.firstAidId
                             }
-                            matchingLearning != null
                         }
                     }
-                    
+
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
@@ -477,36 +223,29 @@ fun LearnExamPage(
                             .padding(bottom = 80.dp) // Reduced bottom padding
                     ) {
                         items(examsWithLearning) { exam ->
-                            val firstAidId = exam["firstAidId"] as? String ?: ""
-                            val examId = exam["examId"] as? String ?: ""
-                            val title = firstAidTitles[firstAidId] ?: firstAidId
-                            
+                            val title = uiState.firstAidTitles[exam.firstAidId] ?: exam.firstAidId
+
                             // Check if learning material for this specific topic is completed
-                            // Find the learning material that matches this exam's firstAidId
-                            val matchingLearning = learnTopics.find { learning ->
-                                (learning["firstAidId"] as? String) == firstAidId
+                            val matchingLearning = uiState.sortedLearnTopics.find { learning ->
+                                learning.firstAidId == exam.firstAidId
                             }
-                            val learningId = matchingLearning?.get("learningId") as? String ?: ""
-                            val learningStatus = learningProgress[learningId] ?: "Pending"
-                            val isLearningCompleted = learningStatus == "Completed"
-                            
+                            val isLearningCompleted = matchingLearning?.isCompleted ?: false
+
                             // Get exam progress status
-                            val examProgressData = examProgress[examId]
+                            val examProgressData = uiState.examProgress[exam.examId]
                             val examStatus = examProgressData?.get("status") as? String ?: "Pending"
                             val isExamPassed = examStatus == "Passed"
-                            
+
                             // Exam is available if learning is completed
                             val isExamAvailable = isLearningCompleted
-                            
-                            android.util.Log.d("LearnExamPage", "Rendering exam card - examId: $examId, learningCompleted: $isLearningCompleted, examStatus: $examStatus, isAvailable: $isExamAvailable")
-                            
+
                             ExamTopicCard(
                                 title = title,
                                 isAvailable = isExamAvailable,
                                 isPassed = isExamPassed,
-                                onClick = { 
+                                onClick = {
                                     if (isExamAvailable) {
-                                        onExamTopicClick(examId)
+                                        onExamTopicClick(exam.examId)
                                     }
                                 },
                                 onUnavailableClick = { examTitle ->
@@ -519,15 +258,15 @@ fun LearnExamPage(
                     }
                 }
             }
-            
+
             // Bottom Bar
             BottomBar(
                 selected = BottomItem.LEARN,
                 onSelected = onSelectBottom
             )
         }
-        
-        // Unavailable exam message dialog - positioned absolutely at top level
+
+        // Unavailable exam message dialog
         if (showUnavailableMessage) {
             Box(
                 modifier = Modifier
@@ -553,21 +292,21 @@ fun LearnExamPage(
                             color = Color.Black,
                             fontFamily = cabin
                         )
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
-                        
+
                         Text(
                             text = "You should complete the learning material for $unavailableExamTitle before taking the exam.",
                             fontSize = 14.sp,
                             color = Color.Gray,
                             fontFamily = cabin,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            textAlign = TextAlign.Center
                         )
-                        
+
                         Spacer(modifier = Modifier.height(20.dp))
-                        
+
                         Button(
-                            onClick = { 
+                            onClick = {
                                 showUnavailableMessage = false
                                 unavailableExamTitle = ""
                             },
@@ -622,7 +361,7 @@ private fun LearnTopicCard(
                 fontWeight = FontWeight.Bold,
                 fontFamily = fontFamily
             )
-            
+
             if (isCompleted) {
                 Icon(
                     imageVector = Icons.Default.Check,
@@ -648,9 +387,7 @@ private fun ExamTopicCard(
     val textColor = if (isAvailable) colorResource(id = R.color.green_primary) else Color.Gray
     val borderColor = if (isAvailable) colorResource(id = R.color.green_primary) else Color.DarkGray
     val iconColor = if (isAvailable) colorResource(id = R.color.green_primary) else Color.Gray
-    
-    android.util.Log.d("ExamTopicCard", "Rendering exam card - title: $title, isAvailable: $isAvailable, isPassed: $isPassed")
-    
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -662,7 +399,7 @@ private fun ExamTopicCard(
                     modifier
                 }
             }
-            .clickable { 
+            .clickable {
                 if (isAvailable) {
                     onClick()
                 } else {
@@ -687,9 +424,8 @@ private fun ExamTopicCard(
                 fontWeight = FontWeight.Bold,
                 fontFamily = fontFamily
             )
-            
+
             if (isPassed) {
-                android.util.Log.d("ExamTopicCard", "Showing check icon for passed exam: $title")
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Passed",

@@ -32,6 +32,7 @@ fun LoginSignupPage(
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
+        //Background Image
         Image(
             painter = painterResource(id = R.drawable.cprstickman),
             contentDescription = null,
@@ -55,6 +56,7 @@ fun LoginSignupPage(
         ) {
             Spacer(modifier = Modifier.height(200.dp))
 
+            //logo
             Box(
                 modifier = Modifier
                     .size(118.dp)
@@ -73,10 +75,12 @@ fun LoginSignupPage(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            //app name
             Box { Image(painter = painterResource(id = R.drawable.appname), contentDescription = null) }
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            //log in button
             Button(
                 onClick = onLoginClick,
                 modifier = Modifier
@@ -91,6 +95,7 @@ fun LoginSignupPage(
 
             Spacer(modifier = Modifier.height(25.dp))
 
+            //sign up button
             Button(
                 onClick = onSignupClick,
                 modifier = Modifier

@@ -34,20 +34,16 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.firstaid.viewmodel.userProfile.SignUpViewModel
 
 @Composable
 fun SignUpPage(
     onSignupSuccess: () -> Unit = {},
-    onLoginClick: () -> Unit = {}
+    onLoginClick: () -> Unit = {},
+    viewModel: SignUpViewModel = viewModel()
 ) {
-    var email by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
-    var showConfirmPassword by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsState()
 
     val mateSC = FontFamily(
         Font(R.font.matesc_regular, FontWeight.Bold)
@@ -65,9 +61,8 @@ fun SignUpPage(
     var confirmPasswordError by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
 
-    val emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$".toRegex()
-    val usernameRegex = "^[A-Za-z0-9]{8,}$".toRegex()
     val keyboardController = LocalSoftwareKeyboardController.current
 
     Column(
@@ -77,18 +72,17 @@ fun SignUpPage(
     ) {
         // Fixed TopBar
         Spacer(modifier = Modifier.height(60.dp))
-        
-        // Scrollable content
+
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState()) // Scrollable content
                 .imePadding()
                 .padding(horizontal = 48.dp)
                 .clickable { keyboardController?.hide() },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
+            //logo
             Box(
                 modifier = Modifier
                     .size(118.dp)
@@ -135,16 +129,12 @@ fun SignUpPage(
 
             Spacer(modifier = Modifier.height(8.dp))
             TextField(
-                value = email,
-                onValueChange = { newEmail ->
-                    email = newEmail
-                    emailError = if (emailRegex.matches(newEmail)) null else "Invalid email format"
-                    errorMessage = null
-                },
+                value = uiState.email,
+                onValueChange = { viewModel.onEmailChange(it) },
                 placeholder = { Text("Enter Email Address", color = Color(0xFFAAAAAA)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                isError = emailError != null,
+                isError = uiState.emailError != null,
                 shape = RoundedCornerShape(10.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color(0xFFECecec),
@@ -158,13 +148,13 @@ fun SignUpPage(
                 )
             )
 
-            if (emailError != null) {
+            if (uiState.emailError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                 ) {
                     Text(
-                        text = emailError ?: "",
+                        text = uiState.emailError ?: "",
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, start = 4.dp)
@@ -190,16 +180,12 @@ fun SignUpPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
-                value = username,
-                onValueChange = {
-                    username = it
-                    usernameError = if (usernameRegex.matches(it)) null else "At least 8 characters (letters or digits only)"
-                    errorMessage = null
-                },
+                value = uiState.username,
+                onValueChange = { viewModel.onUsernameChange(it) },
                 placeholder = { Text("Enter Username", color = Color(0xFFAAAAAA)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                isError = usernameError != null,
+                isError = uiState.usernameError != null,
                 shape = RoundedCornerShape(10.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color(0xFFECecec),
@@ -211,13 +197,13 @@ fun SignUpPage(
                     cursorColor = Color.Black
                 )
             )
-            if (usernameError != null) {
+            if (uiState.usernameError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                 ) {
                     Text(
-                        usernameError!!,
+                        uiState.usernameError ?: "",
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
@@ -243,28 +229,18 @@ fun SignUpPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
-                value = password,
-                onValueChange = {
-                    password = it
-                    passwordError = when {
-                        it.isBlank() -> "Password cannot be empty"
-                        it.contains(" ") -> "Password cannot contain spaces"
-                        it.length < 6 -> "Password must be at least 6 characters"
-                        else -> null
-                    }
-                    confirmPasswordError = if (confirmPassword == password) null else "Passwords do not match"
-                    errorMessage = null
-                },
+                value = uiState.password,
+                onValueChange = { viewModel.onPasswordChange(it) },
                 placeholder = { Text("Enter Password", color = Color(0xFFAAAAAA)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                isError = passwordError != null,
+                isError = uiState.passwordError != null,
                 shape = RoundedCornerShape(10.dp),
-                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation = if (uiState.showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    IconButton(onClick = { showPassword = !showPassword }) {
+                    IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
                         Icon(
-                            imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            imageVector = if (uiState.showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                             contentDescription = null,
                             tint = Color.Black
                         )
@@ -280,13 +256,13 @@ fun SignUpPage(
                     cursorColor = Color.Black
                 )
             )
-            if (passwordError != null) {
+            if (uiState.passwordError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                 ) {
                     Text(
-                        passwordError!!,
+                        uiState.passwordError ?: "",
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
@@ -312,22 +288,18 @@ fun SignUpPage(
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
-                value = confirmPassword,
-                onValueChange = {
-                    confirmPassword = it
-                    confirmPasswordError = if (it == password) null else "Confirmed password must match Password"
-                    errorMessage = null
-                },
+                value = uiState.confirmPassword,
+                onValueChange = { viewModel.onConfirmPasswordChange(it) },
                 placeholder = { Text("Confirm Password", color = Color(0xFFAAAAAA)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                isError = confirmPasswordError != null,
+                isError = uiState.confirmPasswordError != null,
                 shape = RoundedCornerShape(10.dp),
-                visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation = if (uiState.showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    IconButton(onClick = { showConfirmPassword = !showConfirmPassword }) {
+                    IconButton(onClick = { viewModel.toggleConfirmPasswordVisibility() }) {
                         Icon(
-                            imageVector = if (showConfirmPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            imageVector = if (uiState.showConfirmPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                             contentDescription = null,
                             tint = Color.Black
                         )
@@ -343,13 +315,13 @@ fun SignUpPage(
                     cursorColor = Color.Black
                 )
             )
-            if (confirmPasswordError != null) {
+            if (uiState.confirmPasswordError != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                 ) {
                     Text(
-                        confirmPasswordError!!,
+                        uiState.confirmPasswordError ?: "",
                         color = Color.Red,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
@@ -359,8 +331,23 @@ fun SignUpPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Show success message
+            uiState.successMessage?.let { msg ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                ) {
+                    Text(
+                        text = msg,
+                        color = colorResource(id = R.color.green_primary),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                    )
+                }
+            }
+
             // Show Firebase or validation error
-            errorMessage?.let { err ->
+            uiState.errorMessage?.let { err ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -378,100 +365,15 @@ fun SignUpPage(
 
             Button(
                 onClick = {
-                    if (emailError != null || usernameError != null || passwordError != null || confirmPasswordError != null) {
-                        errorMessage = "Please fix the errors above"
-                        return@Button
-                    }
-                    isLoading = true
-                    errorMessage = null
-
-                    val auth = FirebaseAuth.getInstance()
-                    val firestore = FirebaseFirestore.getInstance()
-
-                    auth.createUserWithEmailAndPassword(email.trim(), password)
-                        .addOnCompleteListener { authTask ->
-                            if (authTask.isSuccessful) {
-                                val uid = auth.currentUser?.uid
-                                if (uid == null) {
-                                    isLoading = false
-                                    errorMessage = "Signup succeeded but no user id found"
-                                    return@addOnCompleteListener
-                                }
-                                val userData = hashMapOf(
-                                    "userId" to uid,
-                                    "email" to email.trim(),
-                                    "name" to username.trim(),
-                                    "password" to password,
-                                    "login" to false,
-                                    "createdAt" to System.currentTimeMillis()
-                                )
-                                firestore.collection("User").add(userData)
-                                    .addOnSuccessListener { userDocRef ->
-                                        // Create both learning and exam progress records
-                                        // First get all learning materials and exams
-                                        firestore.collection("Learning").get()
-                                            .addOnSuccessListener { learningDocs ->
-                                                // Then get all exams
-                                                firestore.collection("Exam").get()
-                                                    .addOnSuccessListener { examDocs ->
-                                                        // Create batch after both queries complete
-                                                        val batch = firestore.batch()
-                                                        
-                                                        // Create learning progress records for all learning materials
-                                                        learningDocs.documents.forEach { learningDoc ->
-                                                            val learningId = learningDoc.getString("learningId") ?: learningDoc.id
-                                                            val progressData = hashMapOf(
-                                                                "userId" to uid,
-                                                                "learningId" to learningId,
-                                                                "status" to "Pending"
-                                                            )
-                                                            val progressRef = firestore.collection("Learning_Progress").document()
-                                                            batch.set(progressRef, progressData)
-                                                        }
-                                                        
-                                                        // Create exam progress records for all exams
-                                                        examDocs.documents.forEach { examDoc ->
-                                                            val examId = examDoc.getString("examId") ?: examDoc.id
-                                                            val examProgressData = hashMapOf(
-                                                                "userId" to uid,
-                                                                "examId" to examId,
-                                                                "status" to "Pending",
-                                                                "score" to 0
-                                                            )
-                                                            val examProgressRef = firestore.collection("Exam_Progress").document()
-                                                            batch.set(examProgressRef, examProgressData)
-                                                        }
-                                                        
-                                                        // Commit all progress records
-                                                        batch.commit()
-                                                            .addOnSuccessListener {
-                                                                isLoading = false
-                                                                onSignupSuccess()
-                                                            }
-                                                            .addOnFailureListener { e ->
-                                                                isLoading = false
-                                                                errorMessage = "User created but failed to initialize progress: ${e.localizedMessage}"
-                                                            }
-                                                    }
-                                                    .addOnFailureListener { e ->
-                                                        isLoading = false
-                                                        errorMessage = "User created but failed to load exams: ${e.localizedMessage}"
-                                                    }
-                                            }
-                                            .addOnFailureListener { e ->
-                                                isLoading = false
-                                                errorMessage = "User created but failed to load learning materials: ${e.localizedMessage}"
-                                            }
-                                    }
-                                    .addOnFailureListener { e ->
-                                        isLoading = false
-                                        errorMessage = e.localizedMessage ?: "Failed to save user"
-                                    }
-                            } else {
-                                isLoading = false
-                                errorMessage = authTask.exception?.localizedMessage ?: "Signup failed"
-                            }
-                        }
+                    viewModel.signUp(
+                        onSuccess = {
+                            // Navigate to login page after a short delay
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                onSignupSuccess()
+                            }, 3000)
+                        },
+                        onFailure = {}
+                    )
                 },
                 modifier = Modifier
                     .width(209.dp)
@@ -480,17 +382,17 @@ fun SignUpPage(
                     containerColor = colorResource(id = R.color.green_primary)
                 ),
                 shape = RoundedCornerShape(10.dp),
-                enabled = !isLoading
-                        && email.isNotBlank()
-                        && username.isNotBlank()
-                        && password.isNotBlank()
-                        && confirmPassword.isNotBlank()
-                        && emailError == null
-                        && usernameError == null
-                        && passwordError == null
-                        && confirmPasswordError == null
+                enabled = !uiState.isLoading
+                        && uiState.email.isNotBlank()
+                        && uiState.username.isNotBlank()
+                        && uiState.password.isNotBlank()
+                        && uiState.confirmPassword.isNotBlank()
+                        && uiState.emailError == null
+                        && uiState.usernameError == null
+                        && uiState.passwordError == null
+                        && uiState.confirmPasswordError == null
             ) {
-                if (isLoading) {
+                if (uiState.isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         color = Color.White

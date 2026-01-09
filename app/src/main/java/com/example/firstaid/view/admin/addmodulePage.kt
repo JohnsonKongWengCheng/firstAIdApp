@@ -333,6 +333,8 @@ fun AddModulePage(
                             fontFamily = cabin
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                        val isDescriptionWhitespace =
+                            moduleDescription.text.isNotEmpty() && moduleDescription.text.isBlank()
                         OutlinedTextField(
                             value = moduleDescription,
                             onValueChange = { newValue ->
@@ -344,16 +346,28 @@ fun AddModulePage(
                             placeholder = { Text("Enter module description", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
+                            isError = !noTopicsAvailable && isDescriptionWhitespace,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedBorderColor = if (!noTopicsAvailable && isDescriptionWhitespace) Color.Red else Color.Transparent,
+                                focusedBorderColor = if (!noTopicsAvailable && isDescriptionWhitespace) Color.Red else colorResource(
+                                    id = R.color.green_primary
+                                ).copy(alpha = 0.4f),
                                 unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
                                 focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
                                 disabledContainerColor = Color(0xFFF5F5F5),
                                 disabledTextColor = Color.Gray
                             )
                         )
+                        if (!noTopicsAvailable && isDescriptionWhitespace) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Module Description should not be empty",
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                fontFamily = cabin
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(24.dp))
 
@@ -405,6 +419,7 @@ fun AddModulePage(
                         
                         Text(text = "Title:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
+                        val titleWhitespace = step.title.text.isNotEmpty() && step.title.text.isBlank()
                         OutlinedTextField(
                             value = step.title,
                             onValueChange = { newValue ->
@@ -418,20 +433,32 @@ fun AddModulePage(
                             placeholder = { Text("Enter step ${index + 1} title", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
+                            isError = !noTopicsAvailable && titleWhitespace,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedBorderColor = if (!noTopicsAvailable && titleWhitespace) Color.Red else Color.Transparent,
+                                focusedBorderColor = if (!noTopicsAvailable && titleWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                errorBorderColor = Color.Red,
                                 unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
                                 focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
                                 disabledContainerColor = Color(0xFFF5F5F5),
                                 disabledTextColor = Color.Gray
                             )
                         )
+                        if (!noTopicsAvailable && titleWhitespace) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Title should not be empty",
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                fontFamily = cabin
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(text = "Content:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
+                        val contentWhitespace = step.content.text.isNotEmpty() && step.content.text.isBlank()
                         OutlinedTextField(
                             value = step.content,
                             onValueChange = { newValue ->
@@ -445,20 +472,32 @@ fun AddModulePage(
                             placeholder = { Text("Enter step ${index + 1} content", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
+                            isError = !noTopicsAvailable && contentWhitespace,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedBorderColor = if (!noTopicsAvailable && contentWhitespace) Color.Red else Color.Transparent,
+                                focusedBorderColor = if (!noTopicsAvailable && contentWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                errorBorderColor = Color.Red,
                                 unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
                                 focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
                                 disabledContainerColor = Color(0xFFF5F5F5),
                                 disabledTextColor = Color.Gray
                             )
                         )
+                        if (!noTopicsAvailable && contentWhitespace) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Content should not be empty",
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                fontFamily = cabin
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(text = "Description:", fontSize = 16.sp, color = if (noTopicsAvailable) Color.Gray else Color.Black)
                         Spacer(modifier = Modifier.height(8.dp))
+                        val descriptionWhitespace = step.description.text.isNotEmpty() && step.description.text.isBlank()
                         OutlinedTextField(
                             value = step.description,
                             onValueChange = { newValue ->
@@ -472,16 +511,27 @@ fun AddModulePage(
                             placeholder = { Text("Enter the description here..", color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
+                            isError = !noTopicsAvailable && descriptionWhitespace,
                             shape = RoundedCornerShape(10.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                unfocusedBorderColor = if (!noTopicsAvailable && descriptionWhitespace) Color.Red else Color.Transparent,
+                                focusedBorderColor = if (!noTopicsAvailable && descriptionWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                                errorBorderColor = Color.Red,
                                 unfocusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFECF0EC),
                                 focusedContainerColor = if (noTopicsAvailable) Color(0xFFF5F5F5) else Color(0xFFE6F3E6),
                                 disabledContainerColor = Color(0xFFF5F5F5),
                                 disabledTextColor = Color.Gray
                             )
                         )
+                        if (!noTopicsAvailable && descriptionWhitespace) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Description should not be empty",
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                fontFamily = cabin
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(text = "Image:", fontSize = 16.sp, color = Color.Black)

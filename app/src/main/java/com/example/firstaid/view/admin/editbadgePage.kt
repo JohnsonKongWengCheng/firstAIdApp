@@ -55,6 +55,8 @@ fun EditBadgePage(
     var selectedBadge by remember { mutableStateOf<BadgeData?>(null) }
     var badgeName by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var badgeNameWhitespace by remember { mutableStateOf(false) }
+    var descriptionWhitespace by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var noTopicsAvailable by remember { mutableStateOf(false) }
@@ -277,20 +279,35 @@ fun EditBadgePage(
 
                     OutlinedTextField(
                         value = badgeName,
-                        onValueChange = { badgeName = it },
+                        onValueChange = {
+                            badgeName = it
+                            badgeNameWhitespace = it.isNotEmpty() && it.isBlank()
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = selectedTopic != null && !noTopicsAvailable,
+                        placeholder = { Text("Enter Badge Name..") },
+                        isError = selectedTopic != null && !noTopicsAvailable && badgeNameWhitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                            unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                            focusedBorderColor = Color.Transparent,
+                            focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFE6F3E6) else Color(0xFFF5F5F5),
+                            unfocusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
                             unfocusedBorderColor = Color.Transparent,
+                            errorBorderColor = Color.Red,
                             disabledContainerColor = Color(0xFFF5F5F5),
                             disabledTextColor = Color.Gray
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true
                     )
+                    if (selectedTopic != null && !noTopicsAvailable && badgeNameWhitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Badge Name should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            fontFamily = cabin
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(24.dp))
 
@@ -305,20 +322,35 @@ fun EditBadgePage(
 
                     OutlinedTextField(
                         value = description,
-                        onValueChange = { description = it },
+                        onValueChange = {
+                            description = it
+                            descriptionWhitespace = it.isNotEmpty() && it.isBlank()
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = selectedTopic != null && !noTopicsAvailable,
+                        placeholder = { Text("Enter the description here..") },
+                        isError = selectedTopic != null && !noTopicsAvailable && descriptionWhitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                            unfocusedContainerColor = if (selectedTopic != null) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                            focusedBorderColor = Color.Transparent,
+                            focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFE6F3E6) else Color(0xFFF5F5F5),
+                            unfocusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            focusedBorderColor = colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
                             unfocusedBorderColor = Color.Transparent,
+                            errorBorderColor = Color.Red,
                             disabledContainerColor = Color(0xFFF5F5F5),
                             disabledTextColor = Color.Gray
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true
                     )
+                    if (selectedTopic != null && !noTopicsAvailable && descriptionWhitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Description should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            fontFamily = cabin
+                        )
+                    }
                     
                     Spacer(modifier = Modifier.height(100.dp)) // Extra space for bottom button
                 }

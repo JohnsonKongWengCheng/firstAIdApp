@@ -20,111 +20,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.firstaid.R
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBarWithBack
-import com.google.firebase.firestore.FirebaseFirestore
-
-
+import com.example.firstaid.viewmodel.building.ExamPageViewModel
 
 @Composable
 fun ExamPage(
     onBackClick: () -> Unit = {},
     onSelectBottom: (BottomItem) -> Unit = {},
-    onTopicClick: (String) -> Unit = {}
+    onTopicClick: (String) -> Unit = {},
+    viewModel: ExamPageViewModel = viewModel()
 ) {
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
-    
-    var selectedTab by remember { mutableStateOf("Exam") }
-    var examTopics by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var firstAidTitles by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var examsLoaded by remember { mutableStateOf(false) }
-    var titlesLoaded by remember { mutableStateOf(false) }
-    
-    val db = FirebaseFirestore.getInstance()
-    
-    // Fetch First_Aid titles and Exam data from Firebase
-    LaunchedEffect(Unit) {
-        try {
-            db.collection("First_Aid")
-                .get()
-                .addOnSuccessListener { documents ->
-                    val map = documents.associate { doc ->
-                        val id = doc.getString("firstAidId") ?: doc.id
-                        val title = doc.getString("title") ?: ""
-                        id to title
-                    }
-                    firstAidTitles = map
-                    titlesLoaded = true
-                    if (examsLoaded) isLoading = false
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load first aid titles"
-                    isLoading = false
-                }
+    val uiState by viewModel.uiState.collectAsState()
 
-            db.collection("Exam")
-                .get()
-                .addOnSuccessListener { documents ->
-                    val allExams = documents.mapNotNull { doc ->
-                        mapOf(
-                            "examId" to (doc.getString("examId") ?: doc.id),
-                            "description" to (doc.getString("description") ?: ""),
-                            "firstAidId" to (doc.getString("firstAidId") ?: "")
-                        )
-                    }
-                    
-                    // Filter exams that have questions
-                    if (allExams.isNotEmpty()) {
-                        val examIds = allExams.map { it["examId"] as String }
-                        android.util.Log.d("ExamPage", "Checking questions for ${examIds.size} exams: $examIds")
-                        db.collection("Question")
-                            .whereIn("examId", examIds)
-                            .get()
-                            .addOnSuccessListener { questionDocs ->
-                                val examsWithQuestions = questionDocs.documents.mapNotNull { doc ->
-                                    doc.getString("examId")
-                                }.toSet()
-                                android.util.Log.d("ExamPage", "Found questions for exams: $examsWithQuestions")
-                                
-                                val filteredExams = allExams.filter { exam ->
-                                    val hasQuestions = examsWithQuestions.contains(exam["examId"])
-                                    android.util.Log.d("ExamPage", "Exam ${exam["examId"]} has questions: $hasQuestions")
-                                    hasQuestions
-                                }
-                                // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
-                                examTopics = filteredExams
-                                android.util.Log.d("ExamPage", "Filtered to ${examTopics.size} exams with questions")
-                                examsLoaded = true
-                                if (titlesLoaded) isLoading = false
-                            }
-                            .addOnFailureListener { e ->
-                                // If question query fails, show all exams (fallback)
-                                // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
-                                examTopics = allExams
-                                examsLoaded = true
-                                if (titlesLoaded) isLoading = false
-                            }
-                    } else {
-                        // Note: Sorting by title will happen in UI render after firstAidTitles is loaded
-                        examTopics = allExams
-                        examsLoaded = true
-                        if (titlesLoaded) isLoading = false
-                    }
-                }
-                .addOnFailureListener { e ->
-                    errorMessage = e.localizedMessage ?: "Failed to load exams"
-                    isLoading = false
-                }
-        } catch (e: Exception) {
-            errorMessage = e.localizedMessage ?: "Failed to load data"
-            isLoading = false
-        }
-    }
-    
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -138,7 +50,7 @@ fun ExamPage(
                 title = "Exam",
                 onBackClick = onBackClick
             )
-            
+
             // Main Content
             Column(
                 modifier = Modifier
@@ -146,7 +58,7 @@ fun ExamPage(
                     .padding(horizontal = 16.dp)
             ) {
                 Spacer(modifier = Modifier.height(29.dp))
-                
+
                 // Title
                 Text(
                     text = "First Aid Building",
@@ -156,18 +68,18 @@ fun ExamPage(
                     fontFamily = cabin,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
-                
+
                 Spacer(modifier = Modifier.height(62.dp))
-                
+
                 // Divider line
                 Divider(
                     color = Color(0xFFB8B8B8),
                     thickness = 1.dp,
                     modifier = Modifier.fillMaxWidth()
                 )
-                
+
                 Spacer(modifier = Modifier.height(18.dp))
-                
+
                 // Tab Section
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -175,16 +87,17 @@ fun ExamPage(
                 ) {
                     // Learn Tab
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { viewModel.onTabSelected("Learn") }
                     ) {
                         Text(
                             text = "Learn",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
+                            color = if (uiState.selectedTab == "Learn") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
                             fontFamily = cabin
                         )
-                        if (selectedTab == "Learn") {
+                        if (uiState.selectedTab == "Learn") {
                             Spacer(modifier = Modifier.height(4.dp))
                             Box(
                                 modifier = Modifier
@@ -194,19 +107,20 @@ fun ExamPage(
                             )
                         }
                     }
-                    
+
                     // Exam Tab
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { viewModel.onTabSelected("Exam") }
                     ) {
                         Text(
                             text = "Exam",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
+                            color = if (uiState.selectedTab == "Exam") colorResource(id = R.color.green_primary) else Color(0xFFAAAAAA),
                             fontFamily = cabin
                         )
-                        if (selectedTab == "Exam") {
+                        if (uiState.selectedTab == "Exam") {
                             Spacer(modifier = Modifier.height(4.dp))
                             Box(
                                 modifier = Modifier
@@ -217,12 +131,12 @@ fun ExamPage(
                         }
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(35.dp))
-                
+
                 // Content based on selected tab
-                if (selectedTab == "Exam") {
-                    if (isLoading) {
+                if (uiState.selectedTab == "Exam") {
+                    if (uiState.isLoading) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -231,37 +145,27 @@ fun ExamPage(
                                 color = colorResource(id = R.color.green_primary)
                             )
                         }
-                    } else if (errorMessage != null) {
+                    } else if (uiState.errorMessage != null) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = errorMessage ?: "An error occurred",
+                                text = uiState.errorMessage ?: "An error occurred",
                                 color = Color.Red,
                                 fontFamily = cabin
                             )
                         }
                     } else {
-                        // Re-sort examTopics by title to ensure alphabetical order (case-insensitive)
-                        val sortedExamTopics = remember(examTopics, firstAidTitles) {
-                            examTopics.sortedBy { exam ->
-                                val firstAidId = exam["firstAidId"] as? String ?: ""
-                                val title = firstAidTitles[firstAidId] ?: firstAidId
-                                title.lowercase() // Case-insensitive sorting
-                            }
-                        }
-                        
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(sortedExamTopics) { exam ->
-                                val firstAidId = exam["firstAidId"] as? String ?: ""
-                                val title = firstAidTitles[firstAidId] ?: firstAidId
+                            items(uiState.sortedExamTopics) { exam ->
+                                val title = uiState.firstAidTitles[exam.firstAidId] ?: exam.firstAidId
                                 ExamTopicCard(
                                     title = title,
-                                    onClick = { onTopicClick(exam["examId"] as String) },
+                                    onClick = { onTopicClick(exam.examId) },
                                     fontFamily = cabin
                                 )
                             }
@@ -283,7 +187,7 @@ fun ExamPage(
                 }
             }
         }
-        
+
         // Bottom Bar - positioned at bottom
         BottomBar(
             selected = BottomItem.LEARN,

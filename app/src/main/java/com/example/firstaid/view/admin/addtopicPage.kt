@@ -1,7 +1,6 @@
 package com.example.firstaid.view.admin
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,77 +16,28 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.firstaid.R
-import com.example.firstaid.view.components.TopBar
 import com.example.firstaid.view.components.TopBarWithBack
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.imePadding
+import com.example.firstaid.viewmodel.admin.AddTopicViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun AddTopicPage(
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    viewModel: AddTopicViewModel = viewModel()
 ) {
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
-    val db = remember { FirebaseFirestore.getInstance() }
-    var titleState by remember { mutableStateOf(TextFieldValue("")) }
-    var isSaving by remember { mutableStateOf(false) }
-    var showSuccess by remember { mutableStateOf(false) }
-    var titleExists by remember { mutableStateOf(false) }
-    var isValidating by remember { mutableStateOf(false) }
-    var validationError by remember { mutableStateOf("") }
-    var isFormatInvalid by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
 
-
-    // Validate title (letters and spaces only) and existence in Firebase (case-insensitive)
-    LaunchedEffect(titleState.text) {
-        val title = titleState.text.trim()
-        if (title.isNotEmpty()) {
-            isValidating = true
-            validationError = ""
-            titleExists = false
-            isFormatInvalid = false
-            
-            // Format validation: allow only letters and spaces
-            val isOnlyLettersAndSpaces = title.all { it.isLetter() || it.isWhitespace() }
-            if (!isOnlyLettersAndSpaces) {
-                isFormatInvalid = true
-                validationError = "Only letters and spaces are allowed"
-                isValidating = false
-                return@LaunchedEffect
-            }
-
-            // Get all documents and check case-insensitively
-            db.collection("First_Aid")
-                .get()
-                .addOnSuccessListener { documents ->
-                    val existingTitles = documents.documents.mapNotNull { doc ->
-                        doc.getString("title")?.trim()
-                    }
-
-                    // Check if any existing title matches (case-insensitive)
-                    titleExists = existingTitles.any { existingTitle ->
-                        existingTitle.equals(title, ignoreCase = true)
-                    }
-
-                    if (titleExists) {
-                        validationError = "This topic title already exists"
-                    }
-                    isValidating = false
-                }
-                .addOnFailureListener { exception ->
-                    validationError = "Error checking title availability"
-                    isValidating = false
-                }
-        } else {
-            titleExists = false
-            validationError = ""
-            isValidating = false
-            isFormatInvalid = false
+    LaunchedEffect(uiState.showSuccess) {
+        if (uiState.showSuccess) {
+            delay(1000)
+            viewModel.dismissSuccess()
+            onBackClick()
         }
     }
 
@@ -113,27 +63,26 @@ fun AddTopicPage(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
-                    value = titleState,
-                    onValueChange = { titleState = it },
+                    value = uiState.title,
+                    onValueChange = { viewModel.onTitleChange(it) },
                     placeholder = { Text("Enter First Aid Topic Title here..", color = Color(0xFFAAAAAA)) },
-                    modifier = Modifier
-                        .fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = if (titleExists || isFormatInvalid) Color.Red else Color.Transparent,
-                        focusedBorderColor = if (titleExists || isFormatInvalid) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                        unfocusedBorderColor = if (uiState.titleExists || uiState.isFormatInvalid || uiState.isWhitespaceOnly) Color.Red else Color.Transparent,
+                        focusedBorderColor = if (uiState.titleExists || uiState.isFormatInvalid || uiState.isWhitespaceOnly) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
                         unfocusedContainerColor = Color(0xFFECF0EC),
                         focusedContainerColor = Color(0xFFE6F3E6)
                     ),
-                    isError = titleExists || isFormatInvalid
+                    isError = uiState.titleExists || uiState.isFormatInvalid || uiState.isWhitespaceOnly
                 )
                 
                 // Error message display
-                if (validationError.isNotEmpty()) {
+                if (uiState.validationError.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = validationError,
+                        text = uiState.validationError,
                         color = Color.Red,
                         fontSize = 12.sp,
                         fontFamily = cabin
@@ -141,7 +90,7 @@ fun AddTopicPage(
                 }
                 
                 // Validation loading indicator
-                if (isValidating && titleState.text.trim().isNotEmpty()) {
+                if (uiState.isValidating && uiState.title.trim().isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Checking availability...",
@@ -165,29 +114,11 @@ fun AddTopicPage(
             Spacer(modifier = Modifier.height(12.dp))
             Button(
                 onClick = {
-                    if (!isSaving && titleState.text.isNotBlank() && !titleExists && !isValidating) {
-                        isSaving = true
-                        // Create document with generated id; store both firstAidId and title
-                        val docRef = db.collection("First_Aid").document()
-                        val data = hashMapOf(
-                            "firstAidId" to docRef.id,
-                            "title" to titleState.text.trim()
-                        )
-                        docRef.set(data)
-                            .addOnSuccessListener {
-                                showSuccess = true
-                                scope.launch {
-                                    kotlinx.coroutines.delay(1000)
-                                    showSuccess = false
-                                    onBackClick()
-                                }
-                            }
-                            .addOnFailureListener {
-                                isSaving = false
-                            }
+                    viewModel.saveTopic {
+                        // Success handled in LaunchedEffect
                     }
                 },
-                enabled = !isSaving && titleState.text.isNotBlank() && !titleExists && !isValidating && !isFormatInvalid,
+                enabled = uiState.canSave,
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()
@@ -199,12 +130,12 @@ fun AddTopicPage(
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text(text = if (isSaving) "Saving..." else "Confirm", color = Color.White, fontFamily = cabin)
+                Text(text = if (uiState.isSaving) "Saving..." else "Confirm", color = Color.White, fontFamily = cabin)
             }
         }
 
         // Success overlay
-        if (showSuccess) {
+        if (uiState.showSuccess) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -244,4 +175,3 @@ fun AddTopicPage(
         }
     }
 }
-

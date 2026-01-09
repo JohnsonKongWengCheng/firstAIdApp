@@ -317,8 +317,8 @@ fun AiPage(
                         .height(46.dp)
                         .shadow(4.dp, RoundedCornerShape(10.dp)),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isLoading || scenarioText.isEmpty()) 
-                            Color.Gray else colorResource(id = R.color.green_primary)
+                        containerColor = if (isLoading || scenarioText.isBlank())
+                            Color(0xFFCCCCCC) else colorResource(id = R.color.green_primary)
                     ),
                     shape = RoundedCornerShape(10.dp),
                 ) {
@@ -326,7 +326,7 @@ fun AiPage(
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable { 
-                                if (scenarioText.isNotEmpty() && !isLoading) {
+                                if (scenarioText.isNotBlank() && !isLoading) {
                                     isLoading = true
                                     errorMessage = ""
                                     possibleInjuries = ""
@@ -486,9 +486,9 @@ fun AiPage(
                         .height(46.dp)
                         .shadow(4.dp, RoundedCornerShape(10.dp)),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (matchedFirstAidId != null) 
-                            colorResource(id = R.color.green_primary) 
-                        else Color.Gray
+                        containerColor = if (matchedFirstAidId != null)
+                            colorResource(id = R.color.green_primary)
+                        else Color(0xFFCCCCCC)
                     ),
                     shape = RoundedCornerShape(10.dp),
                 ) {

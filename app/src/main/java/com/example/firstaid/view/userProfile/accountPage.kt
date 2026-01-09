@@ -24,7 +24,8 @@ import com.example.firstaid.R
 import com.example.firstaid.view.components.BottomBar
 import com.example.firstaid.view.components.BottomItem
 import com.example.firstaid.view.components.TopBarWithBack
-import com.google.firebase.auth.FirebaseAuth
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.firstaid.viewmodel.userProfile.AccountViewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Image
 import androidx.compose.ui.draw.clip
@@ -39,100 +40,21 @@ fun AccountPage(
     onLogoutClick: () -> Unit = {},
     onMyProfileClick: () -> Unit = {},
     onMyBadgesClick: () -> Unit = {},
-    onContactUsClick: () -> Unit = {}
+    onContactUsClick: () -> Unit = {},
+    viewModel: AccountViewModel = viewModel()
 ) {
     val cabin = FontFamily(Font(R.font.cabin, FontWeight.Bold))
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
-    val auth = FirebaseAuth.getInstance()
-    val currentUser = auth.currentUser
-    
-    var userName by remember { mutableStateOf("User Name") }
-    var userEmail by remember { mutableStateOf("user@example.com") }
-    var profileImageUrl by remember { mutableStateOf<String?>(null) }
     
     val docId = prefs.getString("docId", null)
     val userId = prefs.getString("userId", null)
-    val firebaseUserId = currentUser?.uid
     
-    // Load user data from Firestore
-    LaunchedEffect(Unit) {
-        // Set initial values from Firebase Auth
-        if (currentUser != null) {
-            userName = currentUser.displayName ?: currentUser.email?.substringBefore("@") ?: "User"
-            userEmail = currentUser.email ?: "user@example.com"
-        }
-        
-        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-        
-        // Try to load from Firestore using docId first, then fallback to userId search
-        if (docId != null && docId.isNotEmpty()) {
-            // Load user data from User collection
-            db.collection("User").document(docId).get()
-                .addOnSuccessListener { doc ->
-                    if (doc.exists()) {
-                        userName = doc.getString("name") ?: userName
-                        userEmail = doc.getString("email") ?: userEmail
-                    }
-                }
-                .addOnFailureListener { e ->
-                    // Handle error silently
-                }
-            
-            // Load profile image from Volunteer collection
-            val imageUserId = userId ?: firebaseUserId
-            if (imageUserId != null) {
-                db.collection("Volunteer")
-                    .whereEqualTo("userId", imageUserId)
-                    .limit(1)
-                    .get()
-                    .addOnSuccessListener { volunteerDocs ->
-                        if (!volunteerDocs.isEmpty) {
-                            val volunteerDoc = volunteerDocs.documents.first()
-                            profileImageUrl = volunteerDoc.getString("profileImageUrl")
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        // Handle error silently
-                    }
-            }
-        } else if (firebaseUserId != null) {
-            // Fallback: Search for user data using Firebase Auth UID
-            
-            // Search for user in User collection by userId field
-            db.collection("User")
-                .whereEqualTo("userId", firebaseUserId)
-                .get()
-                .addOnSuccessListener { querySnapshot ->
-                    if (!querySnapshot.isEmpty) {
-                        val userDoc = querySnapshot.documents[0]
-                        userName = userDoc.getString("name") ?: userName
-                        userEmail = userDoc.getString("email") ?: userEmail
-                        
-                        // Store the docId for future use
-                        val docId = userDoc.id
-                        prefs.edit().putString("docId", docId).apply()
-                    }
-                }
-                .addOnFailureListener { e ->
-                }
-            
-            // Load profile image from Volunteer collection using Firebase Auth UID
-            db.collection("Volunteer")
-                .whereEqualTo("userId", firebaseUserId)
-                .limit(1)
-                .get()
-                .addOnSuccessListener { volunteerDocs ->
-                    if (!volunteerDocs.isEmpty) {
-                        val volunteerDoc = volunteerDocs.documents.first()
-                        profileImageUrl = volunteerDoc.getString("profileImageUrl")
-                    } else {
-                    }
-                }
-                .addOnFailureListener { e ->
-                }
-        }
-        
+    val uiState by viewModel.uiState.collectAsState()
+    
+    // Load user data from ViewModel
+    LaunchedEffect(docId, userId) {
+        viewModel.loadUserData(docId, userId)
     }
     
     Box(
@@ -169,26 +91,18 @@ fun AccountPage(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!profileImageUrl.isNullOrBlank()) {
-                        android.util.Log.d("ProfileImage", "Displaying profile image with URL: $profileImageUrl")
+                    if (!uiState.profileImageUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = profileImageUrl,
+                            model = uiState.profileImageUrl,
                             contentDescription = "Profile",
                             modifier = Modifier
                                 .size(100.dp)
                                 .clip(CircleShape),
                             contentScale = ContentScale.Crop,
                             error = painterResource(id = R.drawable.logo),
-                            placeholder = null,
-                            onError = { 
-                                android.util.Log.e("ProfileImage", "Error loading image: ${it.result.throwable.message}")
-                            },
-                            onSuccess = {
-                                android.util.Log.d("ProfileImage", "Successfully loaded profile image")
-                            }
+                            placeholder = null
                         )
                     } else {
-                        android.util.Log.d("ProfileImage", "No profile image URL, showing default icon")
                         Icon(
                             imageVector = Icons.Default.Person,
                             contentDescription = "Profile",
@@ -203,7 +117,7 @@ fun AccountPage(
                     // User Info
                     Column {
                         Text(
-                            text = userName,
+                            text = uiState.userName,
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black,
@@ -211,7 +125,7 @@ fun AccountPage(
                         )
                         Spacer(modifier = Modifier.height(5.dp))
                         Text(
-                            text = userEmail,
+                            text = uiState.userEmail,
                             fontSize = 15.sp,
                             color = Color(0xFF747474),
                             fontFamily = cabin

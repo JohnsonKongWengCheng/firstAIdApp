@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.res.colorResource
+import com.example.firstaid.R
 import com.example.firstaid.view.components.TopBarWithBack
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
@@ -442,24 +444,40 @@ fun EditExamPage(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
+                    val isDescriptionWhitespace =
+                        description.isNotEmpty() && description.isBlank()
                     OutlinedTextField(
                         value = description,
-                        onValueChange = { if (!noTopicsAvailable) description = it },
+                        onValueChange = { newValue ->
+                            if (!noTopicsAvailable) {
+                                description = newValue
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(80.dp),
                         enabled = selectedTopic != null && !noTopicsAvailable,
+                        isError = selectedTopic != null && !noTopicsAvailable && isDescriptionWhitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
+                            focusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFE6F3E6) else Color(0xFFF5F5F5),
                             unfocusedContainerColor = if (selectedTopic != null && !noTopicsAvailable) Color(0xFFECECEC) else Color(0xFFF5F5F5),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
+                            focusedBorderColor = if (selectedTopic != null && !noTopicsAvailable && isDescriptionWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (selectedTopic != null && !noTopicsAvailable && isDescriptionWhitespace) Color.Red else Color.Transparent,
                             disabledContainerColor = Color(0xFFF5F5F5),
                             disabledTextColor = Color.Gray
                         ),
                         shape = RoundedCornerShape(10.dp),
                         maxLines = 3
                     )
+                    if (selectedTopic != null && !noTopicsAvailable && isDescriptionWhitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Description should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Default
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(24.dp))
 
@@ -507,6 +525,7 @@ fun EditExamPage(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
+                    val questionWhitespace = question.question.isNotEmpty() && question.question.isBlank()
                     OutlinedTextField(
                         value = question.question,
                         onValueChange = { newValue ->
@@ -520,15 +539,25 @@ fun EditExamPage(
                             .fillMaxWidth()
                             .height(80.dp),
                         placeholder = { Text("Enter question text") },
+                        isError = questionWhitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFFECECEC),
+                            focusedContainerColor = Color(0xFFE6F3E6),
                             unfocusedContainerColor = Color(0xFFECECEC),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedBorderColor = if (questionWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (questionWhitespace) Color.Red else Color.Transparent,
+                            errorBorderColor = Color.Red
                         ),
                         shape = RoundedCornerShape(10.dp),
                         maxLines = 3
                     )
+                    if (questionWhitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Question should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -541,6 +570,7 @@ fun EditExamPage(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
+                    val correctWhitespace = question.correctAnswer.isNotEmpty() && question.correctAnswer.isBlank()
                     OutlinedTextField(
                         value = question.correctAnswer,
                         onValueChange = { newValue ->
@@ -552,15 +582,25 @@ fun EditExamPage(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter correct answer") },
+                        isError = correctWhitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFFECECEC),
+                            focusedContainerColor = Color(0xFFE6F3E6),
                             unfocusedContainerColor = Color(0xFFECECEC),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedBorderColor = if (correctWhitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (correctWhitespace) Color.Red else Color.Transparent,
+                            errorBorderColor = Color.Red
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true
                     )
+                    if (correctWhitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Correct Answer should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -573,6 +613,7 @@ fun EditExamPage(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
+                    val option1Whitespace = question.otherOption1.isNotEmpty() && question.otherOption1.isBlank()
                     OutlinedTextField(
                         value = question.otherOption1,
                         onValueChange = { newValue ->
@@ -584,15 +625,25 @@ fun EditExamPage(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter option 1") },
+                        isError = option1Whitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFFECECEC),
+                            focusedContainerColor = Color(0xFFE6F3E6),
                             unfocusedContainerColor = Color(0xFFECECEC),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedBorderColor = if (option1Whitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (option1Whitespace) Color.Red else Color.Transparent,
+                            errorBorderColor = Color.Red
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true
                     )
+                    if (option1Whitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Other option 1 should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -604,6 +655,7 @@ fun EditExamPage(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
+                    val option2Whitespace = question.otherOption2.isNotEmpty() && question.otherOption2.isBlank()
                     OutlinedTextField(
                         value = question.otherOption2,
                         onValueChange = { newValue ->
@@ -615,15 +667,25 @@ fun EditExamPage(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter option 2") },
+                        isError = option2Whitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFFECECEC),
+                            focusedContainerColor = Color(0xFFE6F3E6),
                             unfocusedContainerColor = Color(0xFFECECEC),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedBorderColor = if (option2Whitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (option2Whitespace) Color.Red else Color.Transparent,
+                            errorBorderColor = Color.Red
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true
                     )
+                    if (option2Whitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Other option 2 should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -635,6 +697,7 @@ fun EditExamPage(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
+                    val option3Whitespace = question.otherOption3.isNotEmpty() && question.otherOption3.isBlank()
                     OutlinedTextField(
                         value = question.otherOption3,
                         onValueChange = { newValue ->
@@ -646,15 +709,25 @@ fun EditExamPage(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Enter option 3") },
+                        isError = option3Whitespace,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFFECECEC),
+                            focusedContainerColor = Color(0xFFE6F3E6),
                             unfocusedContainerColor = Color(0xFFECECEC),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedBorderColor = if (option3Whitespace) Color.Red else colorResource(id = R.color.green_primary).copy(alpha = 0.4f),
+                            unfocusedBorderColor = if (option3Whitespace) Color.Red else Color.Transparent,
+                            errorBorderColor = Color.Red
                         ),
                         shape = RoundedCornerShape(10.dp),
                         singleLine = true
                     )
+                    if (option3Whitespace) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Other option 3 should not be empty",
+                            color = Color.Red,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(24.dp))
                     

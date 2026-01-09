@@ -52,6 +52,7 @@ fun GateCheckAndNavigate(target: String, navController: androidx.navigation.NavH
     LaunchedEffect(target) {
         val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
         val docId = prefs.getString("docId", null)
+        val userId = prefs.getString("userId", null)
         if (docId == null) {
             navController.navigate("login_signup?redirect=$target") { popUpTo("firstaidlist") { inclusive = false } }
             return@LaunchedEffect
@@ -62,7 +63,23 @@ fun GateCheckAndNavigate(target: String, navController: androidx.navigation.NavH
                 .addOnSuccessListener { doc ->
                     val loggedIn = doc.getBoolean("login") == true
                     if (loggedIn) {
-                        navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
+                        if (userId != null) {
+                            db.collection("Admin").whereEqualTo("userId", userId).limit(1).get()
+                                .addOnSuccessListener { qs ->
+                                    if (!qs.isEmpty) {
+                                        prefs.edit().putBoolean("isAdmin", true).apply()
+                                        navController.navigate("admin") { popUpTo("firstaidlist") { inclusive = false } }
+                                    } else {
+                                        prefs.edit().putBoolean("isAdmin", false).apply()
+                                        navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
+                                    }
+                                }
+                                .addOnFailureListener {
+                                    navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
+                                }
+                        } else {
+                            navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
+                        }
                     } else {
                         navController.navigate("login_signup?redirect=$target") { popUpTo("firstaidlist") { inclusive = false } }
                     }
@@ -96,8 +113,34 @@ class MainActivity : ComponentActivity() {
                             // Simple Compose splash that shows logo then navigates
                             LaunchedEffect(Unit) {
                                 delay(1000)
-                                navController.navigate("firstaidlist") {
-                                    popUpTo(0) { inclusive = true }
+                                val prefs = this@MainActivity.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
+                                val docId = prefs.getString("docId", null)
+                                val userId = prefs.getString("userId", null)
+                                if (docId == null || userId == null) {
+                                    navController.navigate("firstaidlist") {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                } else {
+                                    val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                    db.collection("Admin").whereEqualTo("userId", userId).limit(1).get()
+                                        .addOnSuccessListener { qs ->
+                                            val nextRoute = if (!qs.isEmpty) {
+                                                prefs.edit().putBoolean("isAdmin", true).apply()
+                                                "admin"
+                                            } else {
+                                                prefs.edit().putBoolean("isAdmin", false).apply()
+                                                "firstaidlist"
+                                            }
+                                            navController.navigate(nextRoute) {
+                                                popUpTo(0) { inclusive = true }
+                                            }
+                                        }
+                                        .addOnFailureListener {
+                                            prefs.edit().putBoolean("isAdmin", false).apply()
+                                            navController.navigate("firstaidlist") {
+                                                popUpTo(0) { inclusive = true }
+                                            }
+                                        }
                                 }
                             }
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -134,49 +177,44 @@ class MainActivity : ComponentActivity() {
                             LoginPage(
                                 redirectTo = redirect.ifBlank { null },
                                 onLoginSuccess = {
-                                    // After login, check if user is admin; if so, go to admin
                                     val context = this@MainActivity
                                     val prefs = context.getSharedPreferences("user_session", android.content.Context.MODE_PRIVATE)
                                     val userId = prefs.getString("userId", null)
-                                    if (userId != null) {
-                                        try {
-                                            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                            db.collection("Admin").whereEqualTo("userId", userId).limit(1).get()
-                                                .addOnSuccessListener { qs ->
-                                                    if (!qs.isEmpty) {
-                                                        navController.navigate("admin") { popUpTo("firstaidlist") { inclusive = false } }
-                                                    } else {
-                                                        val target = when (redirect) {
-                                                            "learn" -> "learn"
-                                                            "account" -> "account"
-                                                            else -> "firstaidlist"
-                                                        }
-                                                        navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
-                                                    }
-                                                }
-                                                .addOnFailureListener {
-                                                    val target = when (redirect) {
-                                                        "learn" -> "learn"
-                                                        "account" -> "account"
-                                                        else -> "firstaidlist"
-                                                    }
-                                                    navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
-                                                }
-                                        } catch (_: Exception) {
-                                            val target = when (redirect) {
-                                                "learn" -> "learn"
-                                                "account" -> "account"
-                                                else -> "firstaidlist"
-                                            }
-                                            navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
+                                    val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                    val userTarget = when (redirect) {
+                                        "learn" -> "learn"
+                                        "account" -> "account"
+                                        else -> "firstaidlist"
+                                    }
+
+                                    fun routeToAdmin() {
+                                        prefs.edit().putBoolean("isAdmin", true).apply()
+                                        navController.navigate("admin") {
+                                            popUpTo("firstaidlist") { inclusive = false }
                                         }
+                                    }
+
+                                    fun routeToUser() {
+                                        prefs.edit().putBoolean("isAdmin", false).apply()
+                                        navController.navigate(userTarget) {
+                                            popUpTo("firstaidlist") { inclusive = false }
+                                        }
+                                    }
+
+                                    if (userId == null) {
+                                        routeToUser()
                                     } else {
-                                        val target = when (redirect) {
-                                            "learn" -> "learn"
-                                            "account" -> "account"
-                                            else -> "firstaidlist"
-                                        }
-                                        navController.navigate(target) { popUpTo("firstaidlist") { inclusive = false } }
+                                        db.collection("Admin").whereEqualTo("userId", userId).limit(1).get()
+                                            .addOnSuccessListener { qs ->
+                                                if (!qs.isEmpty) {
+                                                    routeToAdmin()
+                                                } else {
+                                                    routeToUser()
+                                                }
+                                            }
+                                            .addOnFailureListener {
+                                                routeToUser()
+                                            }
                                     }
                                 },
                                 onSignupClick = { navController.navigate("signup") }
@@ -488,8 +526,28 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("admin") {
+                            fun logoutAndReturnToLogin() {
+                                val prefs = this@MainActivity.getSharedPreferences(
+                                    "user_session",
+                                    android.content.Context.MODE_PRIVATE
+                                )
+                                val docId = prefs.getString("docId", null)
+                                if (docId != null) {
+                                    try {
+                                        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                        db.collection("User").document(docId).update("login", false)
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                                prefs.edit().clear().apply()
+                                FirebaseAuth.getInstance().signOut()
+                                navController.navigate("login_signup") {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+
                             AdminMainPage(
-                                onBackClick = { navController.popBackStack() },
+                                onBackClick = { logoutAndReturnToLogin() },
                                 onAddTopic = { navController.navigate("admin_add_topic") },
                                 onEditTopic = { navController.navigate("admin_edit_topic") },
                                 onAddModule = { navController.navigate("admin_add_module") },
